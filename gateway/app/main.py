@@ -11,7 +11,7 @@ from app.routers import api_keys, auth, billing, health, visdom, workspaces
 app = FastAPI(
     title="Visdom Gateway",
     description="Microservice authentication sidecar for Visdom",
-    version="1.0.0"
+    version="0.1.0"
 )
 
 
