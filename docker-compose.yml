@@ -16,6 +16,10 @@ x-visdom: &visdom
   image: visdom-dev-visdom:local
   restart: unless-stopped
   logging: *logging
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
   environment:
     VISDOM_PORT: ${VISDOM_PORT}
     VISDOM_BASE_URL: ${VISDOM_BASE_URL}
@@ -74,6 +78,10 @@ services:
       dockerfile: deploy/proxy.Dockerfile
     restart: unless-stopped
     logging: *logging
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     environment:
       NGINX_PORT: ${NGINX_PORT}
       GATEWAY_HOST: gateway
