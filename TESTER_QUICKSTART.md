@@ -5,7 +5,7 @@ code runs on **your** machine and streams plots to a shared server; you view the
 in the browser. Everything is isolated per **workspace**.
 
 ## 1. Make an account + workspace
-1. Open **https://visdom-cloud-test.duckdns.org** and **Register** (or log in).
+1. Open **https://visdom.dev** and **Register** (or log in).
 2. Create a **workspace** — note its **slug** (e.g. `team-alpha`).
 
 ## 2. Get an API key
@@ -38,7 +38,7 @@ your own code.
 import visdom
 
 vis = visdom.Visdom(
-    server="https://visdom-cloud-test.duckdns.org", port=443, base_url="/vis",
+    server="https://visdom.dev", port=443, base_url="/vis",
     api_key="visdom_live_...",   # your key from step 2
     workspace="team-alpha",      # your workspace slug (required when a key is set)
 )

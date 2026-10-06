@@ -9,6 +9,8 @@ The project is split into two services:
 
 ## Status
 
+A live deployment runs at **[visdom.dev](https://visdom.dev)**, with the visdom server behind the same origin at `/vis/`. [TESTER_QUICKSTART.md](TESTER_QUICKSTART.md) walks through registering, making a workspace, and writing plots to it.
+
 This project is under active development. Milestone 1 and Milestone 2 (auth, workspaces, roles, sharing, the console UI, and now automated tests + CI) are complete; Milestone 3 will connect this control plane to a workspace-aware visdom server behind a single reverse-proxied origin.
 
 ## Features
