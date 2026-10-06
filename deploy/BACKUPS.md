@@ -57,7 +57,7 @@ Install the AWS CLI:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y unzip
-curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && aws --version
 ```
 
@@ -110,27 +110,40 @@ Fetch an archive from the console or from a laptop that has your own AWS
 credentials. The backup user cannot read or list; that is on purpose.
 
 ```bash
+mkdir -p ~/restore && cd ~/restore
 aws s3 ls s3://<bucket>/visdom-dev/ --recursive | tail
 aws s3 cp s3://<bucket>/visdom-dev/2026/09/visdom-dev-<stamp>.tar.gz .
 sha256sum visdom-dev-<stamp>.tar.gz     # compare with the .sha256 object
 tar -xzf visdom-dev-<stamp>.tar.gz      # gives db.dump, envs.tar, env
 ```
 
+The database name and user come from the archived settings, so the commands
+below work whatever the deployment called them:
+
+```bash
+set -a; . <(grep -E '^POSTGRES_(USER|DB)=' ~/restore/env); set +a
+```
+
 Database, into the running stack:
 
 ```bash
 cd ~/app/visdom-dev
-docker compose cp db.dump db:/tmp/db.dump
-docker compose exec -T db pg_restore -U visdom -d visdom_dev --clean --if-exists /tmp/db.dump
+docker compose cp ~/restore/db.dump db:/tmp/db.dump
+docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists /tmp/db.dump
 docker compose restart gateway
 ```
 
-Plot data, onto the volume the three visdom containers share:
+Plot data, onto the volume the three visdom containers share. The volume is
+emptied first, so what is left is exactly what the archive held:
 
 ```bash
-docker run --rm -i -v visdom-dev_visdom_data:/envs busybox tar -xf - -C /envs < envs.tar
+docker run --rm -i -v visdom-dev_visdom_data:/envs busybox \
+  sh -c 'find /envs -mindepth 1 -delete && tar -xf - -C /envs' < ~/restore/envs.tar
 docker compose restart visdom-1 visdom-2 visdom-3
 ```
+
+The database is dumped a moment before the plot data is archived, with the
+stack running. A plot sent in that moment can be in one and not the other.
 
 On a fresh box, put `env` back as `.env` first, then `docker compose up -d`,
 then restore as above.
@@ -141,11 +154,11 @@ A backup nobody has restored is a guess. Once a month, restore the newest
 archive into a scratch database on the box and count what came back:
 
 ```bash
-docker compose exec -T db psql -U visdom -d visdom_dev -c 'create database restore_drill'
-docker compose cp db.dump db:/tmp/db.dump
-docker compose exec -T db pg_restore -U visdom -d restore_drill /tmp/db.dump
-docker compose exec -T db psql -U visdom -d restore_drill -c 'select count(*) from users'
-docker compose exec -T db psql -U visdom -d visdom_dev -c 'drop database restore_drill'
+docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'create database restore_drill'
+docker compose cp ~/restore/db.dump db:/tmp/db.dump
+docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d restore_drill /tmp/db.dump
+docker compose exec -T db psql -U "$POSTGRES_USER" -d restore_drill -c 'select count(*) from users'
+docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'drop database restore_drill'
 ```
 
 If that count matches the live one, the archive is real.

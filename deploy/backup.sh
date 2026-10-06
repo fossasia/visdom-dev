@@ -7,6 +7,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set -euo pipefail
+umask 077
 
 STACK_DIR="${STACK_DIR:-/home/ubuntu/app/visdom-dev}"
 LOCAL_DIR="${LOCAL_DIR:-/home/ubuntu/backups}"
@@ -43,23 +44,24 @@ trap 'rm -rf "$work"' EXIT
 docker compose exec -T db pg_dump -U "$postgres_user" -Fc "$postgres_db" </dev/null >"$work/db.dump"
 [ -s "$work/db.dump" ] || fail "the database dump came out empty"
 
+docker volume inspect "$VISDOM_VOLUME" >/dev/null 2>&1 || fail "no docker volume called $VISDOM_VOLUME. Set VISDOM_VOLUME to the stack's plot volume"
 docker run --rm -v "$VISDOM_VOLUME:/envs:ro" busybox tar -cf - -C /envs . >"$work/envs.tar"
 [ -s "$work/envs.tar" ] || fail "the plot data archive came out empty"
 
 cp .env "$work/env"
 
 mkdir -p "$LOCAL_DIR"
+chmod 700 "$LOCAL_DIR"
 archive="$LOCAL_DIR/visdom-dev-$stamp.tar.gz"
 tar -czf "$archive" -C "$work" db.dump envs.tar env
 sha256sum "$archive" | cut -d' ' -f1 >"$archive.sha256"
+find "$LOCAL_DIR" -name 'visdom-dev-*.tar.gz*' -mtime +"$KEEP_DAYS" -delete
 
 key="visdom-dev/$(date -u +%Y/%m)/$(basename "$archive")"
 region_flag=()
 [ -n "${AWS_REGION:-}" ] && region_flag=(--region "$AWS_REGION")
-aws s3api put-object --bucket "$BACKUP_BUCKET" --key "$key" --body "$archive" "${region_flag[@]}" >/dev/null
-aws s3api put-object --bucket "$BACKUP_BUCKET" --key "$key.sha256" --body "$archive.sha256" "${region_flag[@]}" >/dev/null
-
-find "$LOCAL_DIR" -name 'visdom-dev-*.tar.gz*' -mtime +"$KEEP_DAYS" -delete
+aws s3 cp "$archive" "s3://$BACKUP_BUCKET/$key" --only-show-errors "${region_flag[@]}"
+aws s3 cp "$archive.sha256" "s3://$BACKUP_BUCKET/$key.sha256" --only-show-errors "${region_flag[@]}"
 
 if [ -n "$PING_URL" ]; then
     curl -fsS -m 10 --retry 3 "$PING_URL" >/dev/null 2>&1 || true
