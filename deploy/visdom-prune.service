@@ -1,0 +1,11 @@
+[Unit]
+Description=Clear old docker build files for visdom-dev
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker builder prune --force --filter until=168h
+ExecStart=/usr/bin/docker builder prune --force --max-used-space 3gb
+ExecStart=/usr/bin/docker image prune --force
+ExecStart=/usr/bin/df -h /
