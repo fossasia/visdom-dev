@@ -11,7 +11,7 @@ The project is split into two services:
 
 A live deployment runs at **[visdom.dev](https://visdom.dev)**, with the visdom server behind the same origin at `/vis/`. [TESTER_QUICKSTART.md](TESTER_QUICKSTART.md) walks through registering, making a workspace, and writing plots to it.
 
-This project is under active development. Milestone 1 and Milestone 2 (auth, workspaces, roles, sharing, the console UI, and now automated tests + CI) are complete; Milestone 3 will connect this control plane to a workspace-aware visdom server behind a single reverse-proxied origin.
+This project is under active development. Milestone 1 and Milestone 2 (auth, workspaces, roles, sharing, the console UI, and now automated tests + CI) are complete, and the console now runs with a workspace-aware visdom server behind a single reverse-proxied origin.
 
 ## Features
 
@@ -22,7 +22,7 @@ This project is under active development. Milestone 1 and Milestone 2 (auth, wor
 - API keys scoped to either an entire account or a hand-picked set of workspaces, with optional expiry
 - A billing tab backed by a real plan/usage catalog (Free / Pro / Enterprise), with live plan switching — payment processing is not yet wired up
 - A unified toast and confirm/prompt notification system shared visually with the upstream visdom project
-- A "Visualizations" link from the console into the visdom server, and a link back, so the two apps can be navigated between today (a fully single-origin, session-sharing integration is planned for Milestone 3)
+- A "Visualizations" link from the console into the visdom server, and a link back, with both on one origin and sharing the sign-in session
 
 
 
