@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up the visdom-dev database, plot data and settings
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/visdom-backup.env
+ExecStart=/usr/local/bin/visdom-backup
