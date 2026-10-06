@@ -7,6 +7,15 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
+    esbuild: {
+      jsx: 'automatic',
+    },
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: './src/test/setup.js',
+      css: false,
+    },
     server: {
       proxy: {
         '/api': {
