@@ -259,3 +259,38 @@ def test_logout_revokes_when_only_the_session_cookie_is_present(client, make_use
 
     replayed = client.get(VERIFY, headers={"Cookie": f"session_token={stolen}"})
     assert replayed.status_code == 401
+
+
+def test_logout_revokes_both_accounts_when_the_cookies_disagree(client, make_user):
+    make_user(email="first-logout@example.com")
+    first_session = client.cookies.get("session_token")
+    make_user(email="second-logout@example.com")
+    second_session = client.cookies.get("session_token")
+    second_refresh = client.cookies.get("refresh_token")
+    assert first_session and second_session and second_refresh
+    client.cookies.clear()
+
+    mixed = f"refresh_token={second_refresh}; session_token={first_session}"
+    assert client.post("/api/v1/auth/logout", headers={"Cookie": mixed}).status_code == 200
+
+    for token in (first_session, second_session):
+        replayed = client.get(VERIFY, headers={"Cookie": f"session_token={token}"})
+        assert replayed.status_code == 401
+
+
+def test_logout_reports_failure_when_the_session_cannot_be_revoked(
+    client, make_user, db_session, monkeypatch
+):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    make_user(email="unsaved-logout@example.com")
+
+    def refuse():
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(db_session, "commit", refuse)
+    answer = client.post("/api/v1/auth/logout")
+    monkeypatch.undo()
+
+    assert answer.status_code == 503
+    assert "set-cookie" not in answer.headers
