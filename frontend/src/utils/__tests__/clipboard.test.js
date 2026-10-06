@@ -16,8 +16,17 @@ const setContext = ({ secure, writeText }) => {
 };
 
 describe('copyToClipboard', () => {
+  let selected;
+
   beforeEach(() => {
-    document.execCommand = vi.fn(() => true);
+    selected = undefined;
+    document.execCommand = vi.fn(() => {
+      const field = document.querySelector('textarea');
+      if (field && field.selectionStart === 0 && field.selectionEnd === field.value.length) {
+        selected = field.value;
+      }
+      return true;
+    });
   });
 
   afterEach(() => {
@@ -49,6 +58,7 @@ describe('copyToClipboard', () => {
     expect(await copyToClipboard('visdom_live_abc')).toBe(true);
     expect(writeText).not.toHaveBeenCalled();
     expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect(selected).toBe('visdom_live_abc');
   });
 
   it('falls back when the browser exposes no clipboard API', async () => {
@@ -56,6 +66,7 @@ describe('copyToClipboard', () => {
 
     expect(await copyToClipboard('visdom_live_abc')).toBe(true);
     expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect(selected).toBe('visdom_live_abc');
   });
 
   it('falls back when the clipboard API rejects', async () => {
@@ -64,6 +75,7 @@ describe('copyToClipboard', () => {
 
     expect(await copyToClipboard('visdom_live_abc')).toBe(true);
     expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect(selected).toBe('visdom_live_abc');
   });
 
   it('reports failure when the fallback cannot copy either', async () => {
