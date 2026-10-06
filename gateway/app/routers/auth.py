@@ -272,25 +272,44 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
     return {"access_token": new_access_token, "token_type": "bearer"}
 
 
-@router.post("/logout")
-def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    """Clears the session cookies and revokes refresh tokens already issued."""
+def _user_logging_out(db: Session, request: Request) -> User | None:
+    """Whoever the request can still prove it is, from either cookie.
+
+    The refresh token is asked first because it is the one that outlives the
+    session. The session token is asked second rather than not at all: a client
+    that has only that one is still a client we can identify, and telling it it
+    has logged out while leaving its token working is the failure this exists to
+    avoid.
+    """
     refresh_token = request.cookies.get("refresh_token")
     if refresh_token:
         try:
-            payload = decode_token(refresh_token)
-            user_id = uuid.UUID(payload.get("sub"))
+            user_id = uuid.UUID(decode_token(refresh_token).get("sub"))
         except (jwt.PyJWTError, TypeError, ValueError):
             user_id = None
-
         if user_id is not None:
             user = db.query(User).filter(User.id == user_id).first()
             if user is not None:
-                user.token_version = (user.token_version or 0) + 1
-                try:
-                    db.commit()
-                except SQLAlchemyError:
-                    db.rollback()
+                return user
+
+    return user_for_access_token(db, request.cookies.get("session_token"))
+
+
+@router.post("/logout")
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Clears the session cookies and revokes the tokens already issued.
+
+    Bumping `token_version` is what actually ends the session, since every path
+    that resolves a token checks it. Clearing the cookies only ends it for a
+    client that cooperates, which a stolen token does not.
+    """
+    user = _user_logging_out(db, request)
+    if user is not None:
+        user.token_version = (user.token_version or 0) + 1
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
 
     response.delete_cookie(key="refresh_token", path="/api/v1/auth")
     response.delete_cookie(key="session_token", path="/")

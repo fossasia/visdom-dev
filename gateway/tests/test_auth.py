@@ -237,3 +237,25 @@ def test_verify_still_accepts_an_api_key(client, make_user):
 
     assert response.status_code == 200
     assert response.json()["auth"] == "api_key"
+
+
+def test_logout_revokes_when_only_the_session_cookie_is_present(client, make_user):
+    """The refresh cookie is not the only way to say who is logging out.
+
+    A client can hold a session token without a refresh token: the refresh
+    cookie is scoped to /api/v1/auth and has a shorter life of its own. Logout
+    used to revoke nothing in that case and still answer "Successfully logged
+    out", leaving the session token working for the rest of its lifetime. That
+    is the token an attacker would have.
+    """
+    make_user(email="session-only-logout@example.com")
+    stolen = client.cookies.get("session_token")
+    assert stolen
+
+    client.cookies.delete("refresh_token", path="/api/v1/auth")
+    assert client.cookies.get("refresh_token") is None
+
+    assert client.post("/api/v1/auth/logout").status_code == 200
+
+    replayed = client.get(VERIFY, headers={"Cookie": f"session_token={stolen}"})
+    assert replayed.status_code == 401
