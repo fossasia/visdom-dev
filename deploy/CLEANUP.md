@@ -16,6 +16,13 @@ nightly backup:
 
 Volumes are never touched. The database and every plot live in volumes.
 
+If the machine was off on Sunday at that time, the run is caught up once when
+it next starts, whatever the hour.
+
+These commands work on the whole Docker host, not only on visdom-dev. On a
+machine that runs other things as well, their old build files and unused images
+are cleared too.
+
 ## Install, once
 
 ```bash
