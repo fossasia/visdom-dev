@@ -45,9 +45,10 @@ fetchKeys();
   };
 
   const slugForKey = () => {
-    if (scope === 'workspace' && selectedWorkspaceIds.length === 1) {
-      const only = workspaces.find((ws) => ws.id === selectedWorkspaceIds[0]);
-      if (only) return only.slug;
+    if (scope === 'workspace') {
+      const reachable = workspaces.filter((ws) => selectedWorkspaceIds.includes(ws.id));
+      const pick = reachable.find((ws) => ws.id === activeWorkspace?.id) || reachable[0];
+      if (pick) return pick.slug;
     }
     return activeWorkspace?.slug || workspaces[0]?.slug || '';
   };

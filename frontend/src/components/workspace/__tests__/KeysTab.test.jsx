@@ -35,6 +35,8 @@ const WORKSPACES = [
   { id: 'ws-2', name: 'Beta', slug: 'beta' },
 ];
 
+const THREE_WORKSPACES = [...WORKSPACES, { id: 'ws-3', name: 'Gamma', slug: 'gamma' }];
+
 const ORG_KEY = {
   id: 'key-1',
   name: 'laptop',
@@ -199,6 +201,36 @@ describe('KeysTab', () => {
       );
       await screen.findByText(RAW_KEY);
       expect(within(newKeyBox()).getByTestId('quickstart')).toHaveAttribute('data-workspace', 'beta');
+    });
+
+    it('gives a key for several workspaces an example for one it can reach', async () => {
+      const user = userEvent.setup();
+      listReturns([]);
+      mocks.api.post.mockResolvedValue({ data: { ...SCOPED_KEY, raw_key: RAW_KEY } });
+      renderTab({ workspaces: THREE_WORKSPACES });
+
+      await user.click(screen.getByRole('radio', { name: /Only select workspaces/ }));
+      await user.click(screen.getByRole('checkbox', { name: /Beta/ }));
+      await user.click(screen.getByRole('checkbox', { name: /Gamma/ }));
+      await generate(user);
+
+      await screen.findByText(RAW_KEY);
+      expect(within(newKeyBox()).getByTestId('quickstart')).toHaveAttribute('data-workspace', 'beta');
+    });
+
+    it('keeps the workspace in view when the key can reach it', async () => {
+      const user = userEvent.setup();
+      listReturns([]);
+      mocks.api.post.mockResolvedValue({ data: { ...SCOPED_KEY, raw_key: RAW_KEY } });
+      renderTab({ workspaces: THREE_WORKSPACES, activeWorkspace: THREE_WORKSPACES[2] });
+
+      await user.click(screen.getByRole('radio', { name: /Only select workspaces/ }));
+      await user.click(screen.getByRole('checkbox', { name: /Beta/ }));
+      await user.click(screen.getByRole('checkbox', { name: /Gamma/ }));
+      await generate(user);
+
+      await screen.findByText(RAW_KEY);
+      expect(within(newKeyBox()).getByTestId('quickstart')).toHaveAttribute('data-workspace', 'gamma');
     });
 
     it('shows why the server refused', async () => {
