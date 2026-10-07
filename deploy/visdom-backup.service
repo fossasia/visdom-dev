@@ -1,6 +1,6 @@
 [Unit]
 Description=Back up the visdom-dev database, plot data and settings
-Wants=docker.service
+Wants=docker.service network-online.target
 After=docker.service network-online.target
 
 [Service]
