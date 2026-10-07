@@ -13,3 +13,4 @@ COPY --from=frontend /src/dist /usr/share/nginx/html
 # Rendered by the image's envsubst entrypoint using the environment (see compose).
 COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY deploy/security-headers.conf /etc/nginx/security-headers.conf
+COPY deploy/nginx-main.conf /etc/nginx/nginx.conf
