@@ -7,8 +7,9 @@ import { useToast } from '../toast/useToast';
 import { copyToClipboard, downloadTextFile } from '../../utils/clipboard';
 import { cachedGet, invalidate } from '../../utils/requestCache';
 import { EXPIRY_PRESETS, describeExpiry, parseApiError, resolveExpiresAt } from '../../utils/helpers';
+import QuickStart from './QuickStart';
 
-const KeysTab = ({ workspaces = [] }) => {
+const KeysTab = ({ workspaces = [], activeWorkspace = null }) => {
   const confirm = useConfirm();
   const toast = useToast();
   const [keys, setKeys] = useState([]);
@@ -18,6 +19,7 @@ const KeysTab = ({ workspaces = [] }) => {
   const [expiryPreset, setExpiryPreset] = useState('none');
   const [customExpiresAt, setCustomExpiresAt] = useState('');
   const [newRawKey, setNewRawKey] = useState(null);
+  const [newKeyWorkspace, setNewKeyWorkspace] = useState('');
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +44,14 @@ fetchKeys();
     );
   };
 
+  const slugForKey = () => {
+    if (scope === 'workspace' && selectedWorkspaceIds.length === 1) {
+      const only = workspaces.find((ws) => ws.id === selectedWorkspaceIds[0]);
+      if (only) return only.slug;
+    }
+    return activeWorkspace?.slug || workspaces[0]?.slug || '';
+  };
+
   const handleCreateKey = async (e) => {
     e.preventDefault();
     if (!keyName.trim()) return;
@@ -62,6 +72,7 @@ fetchKeys();
         expires_at: resolveExpiresAt(expiryPreset, customExpiresAt),
       });
       setNewRawKey(response.data.raw_key);
+      setNewKeyWorkspace(slugForKey());
       setKeyName('');
       setScope('org');
       setSelectedWorkspaceIds([]);
@@ -288,6 +299,7 @@ fetchKeys();
                 </button>
               </div>
             </div>
+            <QuickStart apiKey={newRawKey} workspace={newKeyWorkspace} compact />
           </div>
         )}
       </section>
@@ -343,6 +355,16 @@ fetchKeys();
             })}
           </div>
         )}
+      </section>
+
+      <section className="gc-panel">
+        <div className="gc-panel-header">
+          <span className="gc-panel-title">
+            <Terminal size={15} />
+            Sending plots from your code
+          </span>
+        </div>
+        <QuickStart workspace={activeWorkspace?.slug || workspaces[0]?.slug} />
       </section>
     </div>
   );
