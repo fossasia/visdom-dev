@@ -7,6 +7,7 @@ import uuid
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -297,6 +298,11 @@ def _users_logging_out(db: Session, request: Request) -> list[User]:
     return list(found.values())
 
 
+def _clear_session_cookies(response: Response) -> None:
+    response.delete_cookie(key="refresh_token", path="/api/v1/auth")
+    response.delete_cookie(key="session_token", path="/")
+
+
 @router.post("/logout")
 def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     """Clears the session cookies and revokes the tokens already issued.
@@ -304,7 +310,8 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     Bumping `token_version` is what actually ends the session, since every path
     that resolves a token checks it. Clearing the cookies only ends it for a
     client that cooperates, which a stolen token does not. So if the bump cannot
-    be saved, the answer is an error and not a logout that did not happen.
+    be saved, the answer is an error and not a logout that did not happen. The
+    cookies are cleared either way, so this browser is not left signed in.
     """
     users = _users_logging_out(db, request)
     for user in users:
@@ -314,13 +321,14 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
             db.commit()
         except SQLAlchemyError:
             db.rollback()
-            raise HTTPException(
+            response = JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Could not log out. Please try again.",
-            ) from None
+                content={"detail": "Could not log out. Please try again."},
+            )
+            _clear_session_cookies(response)
+            return response
 
-    response.delete_cookie(key="refresh_token", path="/api/v1/auth")
-    response.delete_cookie(key="session_token", path="/")
+    _clear_session_cookies(response)
     return {"detail": "Successfully logged out"}
 
 

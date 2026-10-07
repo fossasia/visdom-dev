@@ -278,7 +278,7 @@ def test_logout_revokes_both_accounts_when_the_cookies_disagree(client, make_use
         assert replayed.status_code == 401
 
 
-def test_logout_reports_failure_when_the_session_cannot_be_revoked(
+def test_a_failed_logout_says_so_and_still_clears_the_cookies(
     client, make_user, db_session, monkeypatch
 ):
     from sqlalchemy.exc import SQLAlchemyError
@@ -293,4 +293,6 @@ def test_logout_reports_failure_when_the_session_cannot_be_revoked(
     monkeypatch.undo()
 
     assert answer.status_code == 503
-    assert "set-cookie" not in answer.headers
+    cleared = answer.headers.get_list("set-cookie")
+    assert any(cookie.startswith("refresh_token=") and "Max-Age=0" in cookie for cookie in cleared)
+    assert any(cookie.startswith("session_token=") and "Max-Age=0" in cookie for cookie in cleared)
