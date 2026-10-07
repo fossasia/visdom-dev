@@ -296,3 +296,41 @@ def test_a_failed_logout_says_so_and_still_clears_the_cookies(
     cleared = answer.headers.get_list("set-cookie")
     assert any(cookie.startswith("refresh_token=") and "Max-Age=0" in cookie for cookie in cleared)
     assert any(cookie.startswith("session_token=") and "Max-Age=0" in cookie for cookie in cleared)
+
+
+def test_a_logout_that_cannot_look_the_user_up_still_clears_the_cookies(client, monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.routers import auth
+
+    def refuse(db, request):
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(auth, "_users_logging_out", refuse)
+    answer = client.post("/api/v1/auth/logout")
+
+    assert answer.status_code == 503
+    cleared = answer.headers.get_list("set-cookie")
+    assert any(cookie.startswith("refresh_token=") for cookie in cleared)
+    assert any(cookie.startswith("session_token=") for cookie in cleared)
+
+
+def test_a_logout_whose_rollback_also_fails_still_clears_the_cookies(
+    client, make_user, db_session, monkeypatch
+):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    make_user(email="no-rollback-logout@example.com")
+
+    def refuse():
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(db_session, "commit", refuse)
+    monkeypatch.setattr(db_session, "rollback", refuse)
+    answer = client.post("/api/v1/auth/logout")
+    monkeypatch.undo()
+
+    assert answer.status_code == 503
+    cleared = answer.headers.get_list("set-cookie")
+    assert any(cookie.startswith("refresh_token=") for cookie in cleared)
+    assert any(cookie.startswith("session_token=") for cookie in cleared)

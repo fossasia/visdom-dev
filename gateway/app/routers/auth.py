@@ -3,6 +3,7 @@
 Authentication router handling user registration, logins, JWT refresh rotation, and logout sessions.
 """
 
+import contextlib
 import uuid
 
 import jwt
@@ -313,20 +314,21 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     be saved, the answer is an error and not a logout that did not happen. The
     cookies are cleared either way, so this browser is not left signed in.
     """
-    users = _users_logging_out(db, request)
-    for user in users:
-        user.token_version = (user.token_version or 0) + 1
-    if users:
-        try:
+    try:
+        users = _users_logging_out(db, request)
+        for user in users:
+            user.token_version = (user.token_version or 0) + 1
+        if users:
             db.commit()
-        except SQLAlchemyError:
+    except SQLAlchemyError:
+        with contextlib.suppress(SQLAlchemyError):
             db.rollback()
-            response = JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"detail": "Could not log out. Please try again."},
-            )
-            _clear_session_cookies(response)
-            return response
+        response = JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "Could not log out. Please try again."},
+        )
+        _clear_session_cookies(response)
+        return response
 
     _clear_session_cookies(response)
     return {"detail": "Successfully logged out"}
