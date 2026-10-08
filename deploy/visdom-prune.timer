@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly clear-out of old docker build files
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
