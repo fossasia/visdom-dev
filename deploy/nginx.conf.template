@@ -40,6 +40,7 @@ map $request_uri $auth_limit_key {
     default                    "";
     "~^/api/v1/auth/login"     $binary_remote_addr;
     "~^/api/v1/auth/register"  $binary_remote_addr;
+    "~^/admin/login"           $binary_remote_addr;
 }
 
 limit_req_zone $auth_limit_key zone=auth_limit:10m rate=1r/s;
@@ -86,6 +87,16 @@ server {
 
         proxy_pass http://console_gateway;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /admin/ {
+        limit_req zone=auth_limit burst=5 nodelay;
+
+        proxy_pass http://console_gateway;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
