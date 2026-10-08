@@ -3,10 +3,12 @@
 Authentication router handling user registration, logins, JWT refresh rotation, and logout sessions.
 """
 
+import contextlib
 import uuid
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -272,28 +274,63 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
     return {"access_token": new_access_token, "token_type": "bearer"}
 
 
-@router.post("/logout")
-def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    """Clears the session cookies and revokes refresh tokens already issued."""
+def _users_logging_out(db: Session, request: Request) -> list[User]:
+    """Everyone the request can still prove it is, from either cookie.
+
+    Usually both cookies name the same account. A client can also hold only
+    the session token, or two cookies that name different accounts, and each
+    of those is a token that must stop working.
+    """
+    found = {}
     refresh_token = request.cookies.get("refresh_token")
     if refresh_token:
         try:
-            payload = decode_token(refresh_token)
-            user_id = uuid.UUID(payload.get("sub"))
+            user_id = uuid.UUID(decode_token(refresh_token).get("sub"))
         except (jwt.PyJWTError, TypeError, ValueError):
             user_id = None
-
         if user_id is not None:
             user = db.query(User).filter(User.id == user_id).first()
             if user is not None:
-                user.token_version = (user.token_version or 0) + 1
-                try:
-                    db.commit()
-                except SQLAlchemyError:
-                    db.rollback()
+                found[user.id] = user
 
+    user = user_for_access_token(db, request.cookies.get("session_token"))
+    if user is not None:
+        found[user.id] = user
+    return list(found.values())
+
+
+def _clear_session_cookies(response: Response) -> None:
     response.delete_cookie(key="refresh_token", path="/api/v1/auth")
     response.delete_cookie(key="session_token", path="/")
+
+
+@router.post("/logout")
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Clears the session cookies and revokes the tokens already issued.
+
+    Bumping `token_version` is what actually ends the session, since every path
+    that resolves a token checks it. Clearing the cookies only ends it for a
+    client that cooperates, which a stolen token does not. So if the bump cannot
+    be saved, the answer is an error and not a logout that did not happen. The
+    cookies are cleared either way, so this browser is not left signed in.
+    """
+    try:
+        users = _users_logging_out(db, request)
+        for user in users:
+            user.token_version = (user.token_version or 0) + 1
+        if users:
+            db.commit()
+    except SQLAlchemyError:
+        with contextlib.suppress(SQLAlchemyError):
+            db.rollback()
+        response = JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "Could not log out. Please try again."},
+        )
+        _clear_session_cookies(response)
+        return response
+
+    _clear_session_cookies(response)
     return {"detail": "Successfully logged out"}
 
 
