@@ -14,6 +14,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from app.admin import roles
+from app.config import settings
 from app.database import SessionLocal, engine
 from app.models import (
     AdminUser,
@@ -32,6 +33,9 @@ ROLE_KEY = "admin_role"
 
 
 class StaffAuth(AuthenticationBackend):
+    def __init__(self, secret_key):
+        super().__init__(secret_key=secret_key, https_only=settings.COOKIE_SECURE)
+
     async def login(self, request: Request) -> bool:
         form = await request.form()
         email = (form.get("username") or "").strip().lower()
