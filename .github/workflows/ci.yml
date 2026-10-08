@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -c constraints.txt
       - run: ruff check .
 
   gateway-test:
@@ -30,8 +30,45 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -c constraints.txt
       - run: pytest tests/ -v
+
+  gateway-migrations:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: visdom
+          POSTGRES_PASSWORD: visdom
+          POSTGRES_DB: visdom_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://visdom:visdom@localhost:5432/visdom_ci
+      JWT_SECRET: ci-only-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -c constraints.txt
+      - name: Migrate an empty database to head
+        run: alembic upgrade head
+      - name: Models must match the migrations
+        run: python scripts/check_migration_drift.py
+      - name: The chain must reverse and replay
+        run: |
+          alembic downgrade base
+          alembic upgrade head
 
   frontend-lint:
     runs-on: ubuntu-latest
