@@ -13,6 +13,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app import email as outbound
+from app import password_reset
 from app.config import settings
 from app.dependencies import (
     enforce_api_key_workspace_scope,
@@ -22,9 +24,13 @@ from app.dependencies import (
     resolve_active_api_key,
     user_for_access_token,
 )
-from app.models import APIKey, Membership, User, WorkspaceInvite
+from app.models import APIKey, Membership, User, WorkspaceInvite, utcnow
 from app.schemas import (
     GeneratedUsernameResponse,
+    PasswordChange,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    PasswordResetRequested,
     Token,
     UserCreate,
     UsernameAvailabilityResponse,
@@ -149,6 +155,20 @@ def update_username(
     return current_user
 
 
+def _open_session(response: Response, access_token: str, refresh_token: str) -> None:
+    """Hand the browser both cookies a signed-in session needs."""
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/api/v1/auth",
+    )
+    _set_session_cookie(response, access_token)
+
+
 def _set_session_cookie(response: Response, access_token: str) -> None:
     """Sets a broad-path cookie carrying the access token so the nginx reverse
     proxy can gate console and visdom routes (including the visdom websocket,
@@ -188,22 +208,14 @@ def login(
             detail="Inactive user."
         )
 
-    # generate token payloads
+    user.last_login_at = utcnow()
+    db.commit()
+
     claims = session_claims(user)
     access_token = create_access_token(data=claims)
     refresh_token = create_refresh_token(data=claims)
 
-    # set refresh token cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=settings.COOKIE_SECURE,  # HTTPS transfer in production
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/api/v1/auth",  # scope cookie to auth endpoints
-    )
-    _set_session_cookie(response, access_token)
+    _open_session(response, access_token, refresh_token)
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -260,16 +272,7 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
     new_access_token = create_access_token(data=claims)
     new_refresh_token = create_refresh_token(data=claims)
 
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh_token,
-        httponly=True,
-        secure=settings.COOKIE_SECURE,
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/api/v1/auth",
-    )
-    _set_session_cookie(response, new_access_token)
+    _open_session(response, new_access_token, new_refresh_token)
 
     return {"access_token": new_access_token, "token_type": "bearer"}
 
@@ -332,6 +335,75 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 
     _clear_session_cookies(response)
     return {"detail": "Successfully logged out"}
+
+
+@router.post("/forgot-password", response_model=PasswordResetRequested, status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(body: PasswordResetRequest, db: Session = Depends(get_db)):
+    """Email a reset link, answering the same whether or not the account exists.
+
+    The reply says only whether this server can send email at all, so the page
+    can point to support instead of leaving someone waiting for a message that
+    will never come. It never says whether the address has an account.
+    """
+    email_enabled = outbound.configured()
+    if email_enabled:
+        user = db.query(User).filter(User.email == body.email.strip().lower()).first()
+        if user is not None and user.is_active:
+            token = password_reset.issue(db, user)
+            if token is not None:
+                outbound.send_password_reset_email(
+                    user.email,
+                    f"{settings.FRONTEND_URL}/reset-password#token={token}",
+                    password_reset.LINK_MINUTES,
+                )
+    return {"email_enabled": email_enabled, "support_contact": settings.SUPPORT_CONTACT}
+
+
+@router.post("/reset-password")
+def reset_password(body: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """Set a new password from an emailed link, signing out every session."""
+    if password_reset.redeem(db, body.token, body.password) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link is invalid or has expired. Ask for a new one.",
+        )
+    return {"detail": "Your password has been changed. Sign in with the new one."}
+
+
+@router.post("/change-password", response_model=Token)
+def change_password(
+    body: PasswordChange,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change your own password, which signs out everywhere else.
+
+    Bumping ``token_version`` ends every session this account has, including
+    this one, so a fresh pair of tokens is issued to the browser that made the
+    change. Anything signed in elsewhere with the old password is closed, which
+    is the point of changing it.
+    """
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That is not your current password.",
+        )
+    if body.new_password == body.current_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The new password is the same as the current one.",
+        )
+
+    current_user.password_hash = get_password_hash(body.new_password)
+    current_user.token_version = (current_user.token_version or 0) + 1
+    password_reset.spend_all(db, current_user)
+    db.commit()
+
+    claims = session_claims(current_user)
+    access_token = create_access_token(data=claims)
+    _open_session(response, access_token, create_refresh_token(data=claims))
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.get("/verify")

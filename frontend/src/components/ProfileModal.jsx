@@ -5,19 +5,29 @@ import { api, useAuth } from '../context/AuthContext';
 import { useToast } from './toast/useToast';
 import { parseApiError } from '../utils/helpers';
 import ModalPortal from './ModalPortal';
+import PasswordInput from './PasswordInput';
+import { formatJoined, formatLastSignIn, planName } from '../utils/profileDetails';
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
+const MIN_PASSWORD = 6;
 
 const ProfileModal = ({ onClose }) => {
-  const { user, setUser } = useAuth();
+  const { user, setUser, setAccessToken } = useAuth();
   const [username, setUsername] = useState(user?.username || '');
   const [usernameAvailable, setUsernameAvailable] = useState(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changing, setChanging] = useState(false);
   const toast = useToast();
 
   const isUnchanged = username === user?.username;
+
+  const joined = formatJoined(user?.created_at);
+  const lastSignIn = formatLastSignIn(user?.last_login_at);
 
   useEffect(() => {
     if (isUnchanged || !username) {
@@ -66,6 +76,35 @@ const ProfileModal = ({ onClose }) => {
     }
   };
 
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < MIN_PASSWORD) {
+      toast.error(`Password should have at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    setChanging(true);
+    try {
+      const response = await api.post('/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setAccessToken(response.data.access_token);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      toast.success('Password changed. Other devices have been signed out.');
+    } catch (err) {
+      toast.error(parseApiError(err, 'Could not change the password.'));
+    } finally {
+      setChanging(false);
+    }
+  };
+
   return (
     <ModalPortal onClose={onClose}>
       <div className="gc-modal-header">
@@ -81,6 +120,25 @@ const ProfileModal = ({ onClose }) => {
         <label className="gc-label gc-mb-1">Email Address</label>
         <div className="gc-settings-value">{user?.email}</div>
       </div>
+
+      <div className="gc-field">
+        <label className="gc-label gc-mb-1">Plan</label>
+        <div className="gc-settings-value">{planName(user?.tier)}</div>
+      </div>
+
+      {joined && (
+        <div className="gc-field">
+          <label className="gc-label gc-mb-1">Member since</label>
+          <div className="gc-settings-value">{joined}</div>
+        </div>
+      )}
+
+      {lastSignIn && (
+        <div className="gc-field">
+          <label className="gc-label gc-mb-1">Last sign-in</label>
+          <div className="gc-settings-value">{lastSignIn}</div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <div className="gc-field">
@@ -121,6 +179,50 @@ const ProfileModal = ({ onClose }) => {
         >
           {submitting ? 'Saving...' : 'Save Username'}
         </button>
+      </form>
+
+      <form onSubmit={handleChangePassword} className="gc-password-form">
+        <div className="gc-field">
+          <label className="gc-label gc-mb-1">Change password</label>
+          <PasswordInput
+            className="gc-input"
+            required
+            autoComplete="current-password"
+            placeholder="Current password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+          />
+        </div>
+        <div className="gc-field">
+          <PasswordInput
+            className="gc-input"
+            required
+            autoComplete="new-password"
+            placeholder={`New password, at least ${MIN_PASSWORD} characters`}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+        <div className="gc-field">
+          <PasswordInput
+            className="gc-input"
+            required
+            autoComplete="new-password"
+            placeholder="Re-enter new password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={changing || !currentPassword || !newPassword}
+          className="gc-btn gc-w-full"
+        >
+          {changing ? 'Changing...' : 'Change Password'}
+        </button>
+        <div className="gc-text-desc-muted gc-mt-1">
+          Changing it signs you out on every other device.
+        </div>
       </form>
     </ModalPortal>
   );

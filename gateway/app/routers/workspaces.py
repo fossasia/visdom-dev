@@ -83,7 +83,6 @@ def _invite_to_member_response(invite: WorkspaceInvite) -> MemberResponse:
 
 
 def _dispatch_invite_email(to_email: str, workspace_name: str, invite_url: str) -> None:
-    # TODO: hook up a real email provider to actually deliver this.
     send_workspace_invite_email(
         to_email=to_email.strip().lower(),
         workspace_name=workspace_name,
