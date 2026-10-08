@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useToast } from '../toast/useToast';
 import { copyToClipboard } from '../../utils/clipboard';
@@ -8,6 +8,9 @@ import { CLIENT_INSTALL, plotSnippet } from '../../utils/quickstart';
 const CodeBlock = ({ label, code, what }) => {
   const toast = useToast();
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(resetTimer.current), []);
 
   const handleCopy = async () => {
     const ok = await copyToClipboard(code);
@@ -16,7 +19,8 @@ const CodeBlock = ({ label, code, what }) => {
       return;
     }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopied(false), 2000);
     toast.success(`Copied the ${what}.`);
   };
 
