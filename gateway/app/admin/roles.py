@@ -19,8 +19,8 @@ ROLES = (VIEWER, SUPPORT, SUPERADMIN)
 
 _VISIBLE = {
     VIEWER: {"User", "Workspace", "Membership"},
-    SUPPORT: {"User", "Workspace", "Membership", "APIKey", "WorkspaceInvite", "SharedLink"},
-    SUPERADMIN: {"User", "Workspace", "Membership", "APIKey", "WorkspaceInvite", "SharedLink", "AdminUser"},
+    SUPPORT: {"User", "Workspace", "Membership", "APIKey", "WorkspaceInvite"},
+    SUPERADMIN: {"User", "Workspace", "Membership", "APIKey", "WorkspaceInvite", "AdminUser"},
 }
 
 
