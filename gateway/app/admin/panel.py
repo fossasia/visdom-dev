@@ -7,6 +7,7 @@
 """The staff admin panel, mounted on its own route with its own login."""
 
 import logging
+import uuid
 
 from sqladmin import Admin, ModelView
 from sqladmin.authentication import AuthenticationBackend
@@ -14,12 +15,12 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from app.admin import roles
+from app.config import settings
 from app.database import SessionLocal, engine
 from app.models import (
     AdminUser,
     APIKey,
     Membership,
-    SharedLink,
     User,
     Workspace,
     WorkspaceInvite,
@@ -32,6 +33,9 @@ ROLE_KEY = "admin_role"
 
 
 class StaffAuth(AuthenticationBackend):
+    def __init__(self, secret_key, path="/admin"):
+        super().__init__(secret_key=secret_key, https_only=settings.COOKIE_SECURE, path=path)
+
     async def login(self, request: Request) -> bool:
         form = await request.form()
         email = (form.get("username") or "").strip().lower()
@@ -61,9 +65,14 @@ class StaffAuth(AuthenticationBackend):
         admin_id = request.session.get(SESSION_KEY)
         if not admin_id:
             return RedirectResponse(request.url_for("admin:login"), status_code=302)
+        try:
+            admin_key = uuid.UUID(str(admin_id))
+        except ValueError:
+            request.session.clear()
+            return RedirectResponse(request.url_for("admin:login"), status_code=302)
         db = SessionLocal()
         try:
-            admin = db.query(AdminUser).filter(AdminUser.id == admin_id).first()
+            admin = db.query(AdminUser).filter(AdminUser.id == admin_key).first()
             if admin is None or not admin.is_active:
                 request.session.clear()
                 return RedirectResponse(request.url_for("admin:login"), status_code=302)
@@ -158,19 +167,6 @@ class WorkspaceInviteAdmin(RoleScopedView, model=WorkspaceInvite):
     column_searchable_list = [WorkspaceInvite.email]
 
 
-class SharedLinkAdmin(RoleScopedView, model=SharedLink):
-    name = "Shared link"
-    name_plural = "Shared links"
-    icon = "fa-solid fa-link"
-    column_list = [
-        SharedLink.workspace_id,
-        SharedLink.role,
-        SharedLink.invite_email,
-        SharedLink.expires_at,
-    ]
-    column_details_exclude_list = [SharedLink.password_hash]
-
-
 class AdminUserAdmin(RoleScopedView, model=AdminUser):
     name = "Staff account"
     name_plural = "Staff accounts"
@@ -191,7 +187,6 @@ VIEWS = (
     MembershipAdmin,
     APIKeyAdmin,
     WorkspaceInviteAdmin,
-    SharedLinkAdmin,
     AdminUserAdmin,
 )
 
@@ -203,7 +198,7 @@ def mount_admin(app, secret_key, base_url="/admin"):
         engine=engine,
         base_url=base_url,
         title="Visdom Dev staff",
-        authentication_backend=StaffAuth(secret_key=secret_key),
+        authentication_backend=StaffAuth(secret_key=secret_key, path=base_url),
     )
     for view in VIEWS:
         admin.add_view(view)

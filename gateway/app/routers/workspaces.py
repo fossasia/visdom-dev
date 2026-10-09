@@ -14,10 +14,11 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db
+from app.dependencies import commit_or_conflict, get_current_user, get_db
 from app.email import build_share_link_url, send_workspace_invite_email
 from app.models import Membership, SharedLink, User, Workspace, WorkspaceInvite, utcnow
 from app.schemas.workspace import (
@@ -129,11 +130,18 @@ def create_workspace(
 
     workspace = Workspace(name=workspace_in.name, slug=workspace_in.slug, created_by=current_user.id)
     db.add(workspace)
-    db.flush()  # populate workspace.id before creating the membership row
+    try:
+        db.flush()  # populate workspace.id before creating the membership row
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A workspace with this slug already exists.",
+        ) from None
 
     membership = Membership(user_id=current_user.id, workspace_id=workspace.id, role="admin")
     db.add(membership)
-    db.commit()
+    commit_or_conflict(db, "A workspace with this slug already exists.")
     db.refresh(workspace)
     db.refresh(membership)
     return _to_my_workspace_response(workspace, membership)
@@ -215,7 +223,10 @@ def invite_member(
             user_id=invitee.id, workspace_id=workspace_id, role=invite.role, status="pending_acceptance"
         )
         db.add(membership)
-        db.commit()
+        commit_or_conflict(
+            db,
+            "User is already a member of, or already has a pending invite to, this workspace.",
+        )
         db.refresh(membership)
         _dispatch_invite_email(
             to_email=email_lower, workspace_name=workspace.name, invite_url=settings.FRONTEND_URL
@@ -237,7 +248,7 @@ def invite_member(
         workspace_id=workspace_id, email=email_lower, role=invite.role, invited_by=current_user.id
     )
     db.add(ws_invite)
-    db.commit()
+    commit_or_conflict(db, "This email has already been invited to this workspace.")
     db.refresh(ws_invite)
     _dispatch_invite_email(
         to_email=email_lower, workspace_name=workspace.name, invite_url=settings.FRONTEND_URL
@@ -350,9 +361,10 @@ def remove_member(
                 Membership.status == "active",
                 Membership.user_id != user_id,
             )
-            .count()
+            .with_for_update()
+            .all()
         )
-        if other_admins == 0:
+        if not other_admins:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot remove the last admin of a workspace.",
@@ -561,6 +573,15 @@ def join_via_shared_link(
         user_id=current_user.id, workspace_id=workspace.id, role=link.role, status="pending_approval"
     )
     db.add(membership)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _get_membership(db, workspace.id, current_user.id)
+        if existing is None:
+            raise
+        return SharedLinkJoinResponse(
+            workspace=workspace, role=existing.role, status=existing.status
+        )
 
     return SharedLinkJoinResponse(workspace=workspace, role=membership.role, status="pending_approval")
