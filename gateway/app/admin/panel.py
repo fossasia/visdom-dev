@@ -33,8 +33,8 @@ ROLE_KEY = "admin_role"
 
 
 class StaffAuth(AuthenticationBackend):
-    def __init__(self, secret_key):
-        super().__init__(secret_key=secret_key, https_only=settings.COOKIE_SECURE)
+    def __init__(self, secret_key, path="/admin"):
+        super().__init__(secret_key=secret_key, https_only=settings.COOKIE_SECURE, path=path)
 
     async def login(self, request: Request) -> bool:
         form = await request.form()
@@ -207,7 +207,7 @@ def mount_admin(app, secret_key, base_url="/admin"):
         engine=engine,
         base_url=base_url,
         title="Visdom Dev staff",
-        authentication_backend=StaffAuth(secret_key=secret_key),
+        authentication_backend=StaffAuth(secret_key=secret_key, path=base_url),
     )
     for view in VIEWS:
         admin.add_view(view)
