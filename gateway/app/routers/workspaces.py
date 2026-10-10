@@ -64,6 +64,19 @@ def _require_admin(db: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> 
     return membership
 
 
+def _lock_workspace(db: Session, workspace_id: uuid.UUID) -> Workspace | None:
+    """Serializes membership changes that must preserve workspace invariants."""
+    query = db.query(Workspace).filter(Workspace.id == workspace_id)
+    if db.get_bind().dialect.name == "sqlite":
+        # SQLite ignores SELECT FOR UPDATE. A no-op UPDATE acquires its writer
+        # lock so concurrent leave checks run one at a time in tests and local use.
+        updated = query.update({Workspace.id: Workspace.id}, synchronize_session=False)
+        if not updated:
+            return None
+        return query.first()
+    return query.with_for_update().first()
+
+
 def _to_member_response(membership: Membership) -> MemberResponse:
     return MemberResponse(
         user_id=membership.user_id,
@@ -316,6 +329,10 @@ def remove_member(
     remove (leave) themselves. The workspace owner (its creator) can only be removed by
     themselves — no other admin can kick the owner out.
     """
+    workspace = _lock_workspace(db, workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+
     is_self_leave = current_user.id == user_id
     if is_self_leave:
         requester_membership = _get_membership(db, workspace_id, current_user.id)
@@ -329,9 +346,6 @@ def remove_member(
                 detail="Only workspace admins can remove other members.",
             )
 
-    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
     if workspace.created_by == user_id and not is_self_leave:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
