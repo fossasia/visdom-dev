@@ -25,6 +25,8 @@ x-visdom: &visdom
     VISDOM_BASE_URL: ${VISDOM_BASE_URL}
     VISDOM_ENV_PATH: ${VISDOM_ENV_PATH}
     VISDOM_GATEWAY_URL: http://gateway:${GATEWAY_PORT}
+    VISDOM_PROXY_URL: http://proxy:${NGINX_PORT}
+    VISDOM_OWNERSHIP_INTERVAL: ${VISDOM_OWNERSHIP_INTERVAL:-30}
   volumes:
     - visdom_data:${VISDOM_ENV_PATH}
   depends_on:
