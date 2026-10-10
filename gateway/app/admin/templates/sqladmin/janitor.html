@@ -1,0 +1,27 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+  {% for section in janitor_findings() %}
+  <div class="card mb-3">
+    <div class="card-header d-flex align-items-center">
+      <h3 class="card-title mb-0">{{ section.title }}</h3>
+      <span class="badge ms-2 {% if section.rows %}bg-orange{% else %}bg-green{% endif %}">
+        {{ section.rows | length }}
+      </span>
+    </div>
+    <div class="card-body">
+      <p class="text-secondary">{{ section.note }}</p>
+      {% if section.rows %}
+      <ul class="list-unstyled mb-0">
+        {% for row in section.rows %}
+        <li class="border-bottom py-2">{{ row }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-secondary mb-0"><em>Nothing to clean up here.</em></p>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -36,6 +36,12 @@ map $shard_key_path $shard_key {
     ""      $http_x_visdom_workspace;
 }
 
+map $http_x_forwarded_proto $forwarded_scheme {
+    default   $scheme;
+    "~^https$" https;
+    "~^http$"  http;
+}
+
 map $request_uri $auth_limit_key {
     default                    "";
     "~^/api/v1/auth/login"     $binary_remote_addr;
@@ -89,7 +95,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_scheme;
     }
 
     location /admin/ {
@@ -99,7 +105,7 @@ server {
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_scheme;
     }
 
     location = /_auth_verify {
@@ -119,6 +125,16 @@ server {
         proxy_hide_header Set-Cookie;
     }
 
+    location = /vis/_activity {
+        deny all;
+        access_log off;
+    }
+
+    location ~ ^/vis/w/[^/]+/_activity {
+        deny all;
+        access_log off;
+    }
+
     location ~ ^/vis/w/(?<ws_slug>[^/]+)/(?<vis_rest>.*)$ {
         auth_request /_auth_verify;
         error_page 401 = @auth_redirect;
@@ -134,7 +150,7 @@ server {
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_scheme;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
@@ -157,7 +173,7 @@ server {
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_scheme;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 

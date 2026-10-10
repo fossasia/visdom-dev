@@ -1,0 +1,40 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+  <h2 class="mb-3">Overview</h2>
+  <div class="row row-cards mb-4">
+    {% for card in overview_cards(request) %}
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="card">
+        <div class="card-body p-3 text-center">
+          <div class="h1 m-0">{{ card.count }}</div>
+          <div class="text-secondary mb-2">{{ card.label }}</div>
+          {% if card.url %}<a href="{{ card.url }}" class="small">view</a>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% set recent = overview_recent(request) %}
+  {% if recent %}
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Newest accounts</h3></div>
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter">
+        <thead><tr><th>Email</th><th>Plan</th><th>Joined</th></tr></thead>
+        <tbody>
+          {% for u in recent %}
+          <tr>
+            <td>{{ u.email }}</td>
+            <td>{{ u.tier }}</td>
+            <td>{{ u.joined }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

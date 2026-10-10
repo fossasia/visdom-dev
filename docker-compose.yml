@@ -65,6 +65,8 @@ services:
       ADMIN_ENABLED: ${ADMIN_ENABLED:-False}
       ADMIN_SECRET: ${ADMIN_SECRET:-}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      VISDOM_SERVERS: ${VISDOM_SERVERS}
+      ADMIN_ENVIRONMENT: ${ADMIN_ENVIRONMENT:-}
     depends_on:
       db:
         condition: service_healthy
