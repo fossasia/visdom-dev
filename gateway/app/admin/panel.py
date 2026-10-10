@@ -6,7 +6,9 @@
 
 """The staff admin panel, mounted on its own route with its own login."""
 
+import functools
 import logging
+import secrets
 import uuid
 
 from sqladmin import Admin, ModelView
@@ -26,10 +28,20 @@ from app.models import (
     WorkspaceInvite,
     utcnow,
 )
-from app.security import verify_password
+from app.security import get_password_hash, verify_password
 
 SESSION_KEY = "admin_user"
 ROLE_KEY = "admin_role"
+
+
+@functools.lru_cache(maxsize=1)
+def _placeholder_hash():
+    """A hash no password matches, checked when there is no account to check.
+
+    Refusing an unknown email then costs the same as refusing a wrong password,
+    so the time a sign-in takes does not say which emails are staff accounts.
+    """
+    return get_password_hash(secrets.token_urlsafe(32))
 
 
 class StaffAuth(AuthenticationBackend):
@@ -43,10 +55,9 @@ class StaffAuth(AuthenticationBackend):
         db = SessionLocal()
         try:
             admin = db.query(AdminUser).filter(AdminUser.email == email).first()
-            if admin is None or not admin.is_active:
-                logging.info("admin login refused for %s", email)
-                return False
-            if not verify_password(password, admin.password_hash):
+            known = admin is not None and admin.is_active
+            matches = verify_password(password, admin.password_hash if known else _placeholder_hash())
+            if not (known and matches):
                 logging.info("admin login refused for %s", email)
                 return False
             admin.last_login_at = utcnow()
