@@ -55,6 +55,16 @@ def _placeholder_hash():
     return get_password_hash(secrets.token_urlsafe(32))
 
 
+@functools.lru_cache(maxsize=1)
+def _placeholder_hash():
+    """A hash no password matches, checked when there is no account to check.
+
+    Refusing an unknown email then costs the same as refusing a wrong password,
+    so the time a sign-in takes does not say which emails are staff accounts.
+    """
+    return get_password_hash(secrets.token_urlsafe(32))
+
+
 class StaffAuth(AuthenticationBackend):
     def __init__(self, secret_key, path="/admin"):
         super().__init__(secret_key=secret_key, https_only=settings.COOKIE_SECURE, path=path)
