@@ -340,7 +340,9 @@ def remove_member(
                 detail="Only workspace admins can remove other members.",
             )
 
-    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    workspace = (
+        db.query(Workspace).filter(Workspace.id == workspace_id).with_for_update().first()
+    )
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
     if workspace.created_by == user_id and not is_self_leave:
