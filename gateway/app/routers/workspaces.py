@@ -9,12 +9,14 @@ Workspace router handling workspace CRUD, team memberships/roles, and
 public shared-link tokens.
 """
 
+import base64
+import binascii
 import datetime
 import uuid
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db
@@ -22,6 +24,7 @@ from app.email import build_share_link_url, send_workspace_invite_email
 from app.models import Membership, SharedLink, User, Workspace, WorkspaceInvite, utcnow
 from app.schemas.workspace import (
     MemberInvite,
+    MemberPageResponse,
     MemberResponse,
     MemberRoleUpdate,
     MyWorkspaceResponse,
@@ -80,6 +83,26 @@ def _invite_to_member_response(invite: WorkspaceInvite) -> MemberResponse:
         role=invite.role,
         status="pending_acceptance",
     )
+
+
+def _encode_member_cursor(kind: str, item_id: uuid.UUID) -> str:
+    raw_cursor = f"{kind}:{item_id}".encode("ascii")
+    return base64.urlsafe_b64encode(raw_cursor).decode("ascii").rstrip("=")
+
+
+def _decode_member_cursor(cursor: str) -> tuple[str, uuid.UUID]:
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = base64.urlsafe_b64decode(f"{cursor}{padding}").decode("ascii")
+        kind, item_id = decoded.split(":", 1)
+        if kind not in {"m", "i"}:
+            raise ValueError("Unknown cursor kind")
+        return kind, uuid.UUID(item_id)
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid member listing cursor.",
+        )
 
 
 def _dispatch_invite_email(to_email: str, workspace_name: str, invite_url: str) -> None:
@@ -246,17 +269,64 @@ def invite_member(
     return _invite_to_member_response(ws_invite)
 
 
-@router.get("/{workspace_id}/members", response_model=List[MemberResponse])
+@router.get("/{workspace_id}/members", response_model=MemberPageResponse)
 def list_members(
     workspace_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=100, description="Page size (maximum 100)."),
+    cursor: str | None = Query(default=None, max_length=128, description="Cursor from the previous page."),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Lists all members and pending invites for the workspace."""
+    """Lists a page of members and pending invites for the workspace."""
     _require_member(db, workspace_id, current_user.id)
-    memberships = db.query(Membership).filter(Membership.workspace_id == workspace_id).all()
-    invites = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id == workspace_id).all()
-    return [_to_member_response(m) for m in memberships] + [_invite_to_member_response(i) for i in invites]
+
+    membership_query = db.query(Membership).filter(Membership.workspace_id == workspace_id)
+    invite_query = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id == workspace_id)
+    cursor_kind: str | None = None
+    cursor_id: uuid.UUID | None = None
+    if cursor is not None:
+        cursor_kind, cursor_id = _decode_member_cursor(cursor)
+
+    total = membership_query.count() + invite_query.count()
+
+    memberships = []
+    invites = []
+    has_more = False
+
+    if cursor_kind != "i":
+        page_memberships = membership_query.options(joinedload(Membership.user))
+        if cursor_kind == "m":
+            page_memberships = page_memberships.filter(Membership.user_id > cursor_id)
+        fetched_memberships = page_memberships.order_by(Membership.user_id).limit(limit + 1).all()
+        has_more_memberships = len(fetched_memberships) > limit
+        memberships = fetched_memberships[:limit]
+        has_more = has_more_memberships
+
+        if not has_more_memberships:
+            invite_slots = limit - len(memberships)
+            page_invites = invite_query.order_by(WorkspaceInvite.id)
+            if invite_slots:
+                fetched_invites = page_invites.limit(invite_slots + 1).all()
+                has_more = len(fetched_invites) > invite_slots
+                invites = fetched_invites[:invite_slots]
+            else:
+                has_more = page_invites.limit(1).first() is not None
+    else:
+        page_invites = invite_query.filter(WorkspaceInvite.id > cursor_id).order_by(WorkspaceInvite.id)
+        fetched_invites = page_invites.limit(limit + 1).all()
+        has_more = len(fetched_invites) > limit
+        invites = fetched_invites[:limit]
+
+    next_cursor = None
+    if has_more:
+        if invites:
+            next_cursor = _encode_member_cursor("i", invites[-1].id)
+        elif memberships:
+            next_cursor = _encode_member_cursor("m", memberships[-1].user_id)
+
+    items = [_to_member_response(m) for m in memberships]
+    items.extend(_invite_to_member_response(i) for i in invites)
+    return MemberPageResponse(items=items, total=total, next_cursor=next_cursor)
 
 
 @router.put("/{workspace_id}/members/{user_id}", response_model=MemberResponse)

@@ -11,7 +11,7 @@ Standardizes the fields for API validation using UUID and Email.
 
 import datetime
 import uuid
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -61,6 +61,12 @@ class MemberResponse(BaseModel):
     status: MembershipStatus = "active"
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MemberPageResponse(BaseModel):
+    items: List[MemberResponse]
+    total: int
+    next_cursor: Optional[str] = None
 
 
 class PendingInviteResponse(BaseModel):

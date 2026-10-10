@@ -78,7 +78,7 @@ def test_join_and_approval_flow(client, make_user, make_workspace):
     assert rejoined.status_code == 200
     assert rejoined.json()["status"] == "pending_approval"
 
-    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()
+    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()["items"]
     joiner_row = next(m for m in members if m["user_id"] == joiner["id"])
     assert joiner_row["status"] == "pending_approval"
 
