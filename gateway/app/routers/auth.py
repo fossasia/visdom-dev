@@ -10,11 +10,12 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import (
+    commit_or_conflict,
     enforce_api_key_workspace_scope,
     get_api_key,
     get_current_user,
@@ -74,14 +75,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     new_user = User(email=email, username=username, password_hash=hashed_pwd)
 
     db.add(new_user)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That email or username was just taken. Please try again.",
-        ) from None
+    commit_or_conflict(db, "That email or username was just taken. Please try again.")
     db.refresh(new_user)
 
     pending_invites = db.query(WorkspaceInvite).filter(WorkspaceInvite.email == new_user.email).all()
@@ -137,14 +131,7 @@ def update_username(
         )
 
     current_user.username = username
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That username was just taken. Please choose another.",
-        ) from None
+    commit_or_conflict(db, "That username was just taken. Please choose another.")
     db.refresh(current_user)
     return current_user
 

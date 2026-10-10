@@ -1,0 +1,101 @@
+{% extends "sqladmin/base.html" %}
+{% from 'sqladmin/_macros.html' import display_menu %}
+{% block body %}
+<div class="wrapper">
+  <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md navbar-dark" data-bs-theme="dark">
+    <div class="container-fluid">
+      <h1 class="navbar-brand navbar-brand-autodark">
+        <a href="{{ url_for('admin:index') }}">
+          {% if admin.logo_url %}
+          <img src="{{ admin.logo_url }}" width="{{ admin.logo_width }}" height="{{ admin.logo_height }}" alt="{{ admin.title }}" class="navbar-brand-logo" />
+          {% else %}
+          <h3>{{ admin.title }}</h3>
+          {% endif %}
+        </a>
+      </h1>
+      <nav class="navbar navbar-expand-sm shadow-none" id="navbar-menu"
+        data-sqladmin-menu="{{ admin.base_url }}">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+          {{ display_menu(admin._menu, request) }}
+        </div>
+      </nav>
+      {% if admin.authentication_backend %}
+      <a href="{{ request.url_for('admin:logout') }}" class="btn btn-secondary btn-icon m-2 px-2">
+        <span class="me-2">{{ _("Logout") }}</span>
+        <i class="fa fa-sign-out"></i>
+      </a>
+      {% endif %}
+    </div>
+  </aside>
+  <div class="page-wrapper">
+    {% block topbar %}
+    {% set env = admin_environment() %}
+    {% set who = admin_identity(request) %}
+    {% set show_switcher = i18n_config.language_switcher and i18n_config.language_switcher | length > 1 %}
+    <header class="navbar navbar-expand-md d-print-none sticky-top shadow-sm{% if env.danger %} bg-danger{% else %} bg-dark{% endif %}" data-bs-theme="dark">
+      <div class="container-fluid">
+        {% if env.name %}
+        <span class="navbar-text fw-bold text-uppercase text-white me-3" style="letter-spacing:.08em;">
+          <i class="fa fa-server me-2"></i>{{ env.name }}
+        </span>
+        {% endif %}
+        <div class="navbar-nav flex-row ms-auto align-items-center gap-3" id="topbar-end">
+          {% if who.email %}
+          <span class="navbar-text text-white-50 small">
+            {{ who.email }}
+            <span class="badge bg-secondary ms-1">{{ who.role }}</span>
+          </span>
+          {% endif %}
+          {% if show_switcher %}
+          <div class="nav-item dropdown">
+            <a href="#" class="btn btn-outline-light dropdown-toggle d-flex align-items-center px-3"
+              data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Language') }}">
+              <i class="fa fa-language me-2"></i>
+              <span>{{ get_locale_display_name(get_locale()) }}</span>
+            </a>
+            <div class="dropdown-menu dropdown-menu-end">
+              {% for code in i18n_config.language_switcher %}
+              <a class="dropdown-item {% if code == get_locale() %}active{% endif %}"
+                href="{{ request.url.include_query_params(lang=code) }}">
+                {{ get_locale_display_name(code) }}
+              </a>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </header>
+    {% endblock %}
+    <div class="container-fluid">
+      <div class="page-header d-print-none">
+        {% block content_header %}
+        <div class="row align-items-center">
+          <div class="col">
+            <h2 class="page-title">{{ title }}</h2>
+            <div class="page-pretitle">{{ subtitle }}</div>
+          </div>
+        </div>
+        {% endblock %}
+      </div>
+    </div>
+    <div class="page-body flex-grow-1">
+      <div class="container-fluid">
+        <div class="row row-deck row-cards">
+          {% block content %} {% endblock %}
+          {% block flash %}
+          {% include 'sqladmin/flash.html' %}
+          {% endblock %}
+          {% block secret_modal %}
+          {% include 'sqladmin/secret_modal.html' %}
+          {% endblock %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

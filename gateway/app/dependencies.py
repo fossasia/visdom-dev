@@ -17,7 +17,7 @@ from typing import Generator
 import jwt
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -35,6 +35,25 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def commit_or_conflict(
+    db: Session,
+    detail: str,
+    status_code: int = status.HTTP_400_BAD_REQUEST,
+) -> None:
+    """Commits, turning a constraint violation into a clean HTTP error.
+
+    Every check-then-write in the routers leaves a window in which a concurrent
+    request can write the same row first. The database still refuses the second
+    write, but without this the refusal surfaces as a raw 500 instead of the same
+    4xx the pre-check would have returned.
+    """
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status_code, detail=detail) from None
 
 
 def user_for_access_token(db: Session, token: str | None) -> User | None:

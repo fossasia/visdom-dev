@@ -13,4 +13,5 @@ ignore = ["B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "alembic/env.py" = ["E402"]
+"scripts/check_migration_drift.py" = ["E402"]
 "app/models.py" = ["E402"]
