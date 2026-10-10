@@ -13,4 +13,7 @@ httpx>=0.27.0
 alembic>=1.13.0
 ruff>=0.15.0
 sqladmin>=0.31.0,<0.32.0
+# sqladmin 0.31 reaches anyio.from_thread after a bare `import anyio`. anyio 4.15
+# made its submodules lazy, so that attribute is gone and every admin edit fails.
+anyio>=4.0.0,<4.15.0
 itsdangerous>=2.1.0
