@@ -12,6 +12,11 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: env.VITE_API_URL || 'http://localhost:8085',
           changeOrigin: true,
+        },
+        '/vis': {
+          target: env.VITE_VISDOM_URL || 'http://localhost:8097',
+          changeOrigin: true,
+          ws: true,
         }
       }
     }
