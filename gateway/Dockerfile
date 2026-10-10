@@ -11,4 +11,4 @@ COPY . .
 ENV PORT=8085
 ENV GATEWAY_WORKERS=1
 EXPOSE 8085
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port \"${PORT}\" --workers \"${GATEWAY_WORKERS}\""]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port \"${PORT}\" --workers \"${GATEWAY_WORKERS}\" --forwarded-allow-ips \"*\""]

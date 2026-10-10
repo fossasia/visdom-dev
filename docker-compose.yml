@@ -62,6 +62,8 @@ services:
       PORT: ${GATEWAY_PORT}
       GATEWAY_WORKERS: ${GATEWAY_WORKERS:-1}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      ADMIN_ENABLED: ${ADMIN_ENABLED:-False}
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
     depends_on:
       db:

@@ -5,6 +5,7 @@ Main FastAPI entrypoint. Mounts routers and configures CORS.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.admin import mount_admin
 from app.config import settings
 from app.routers import api_keys, auth, billing, health, visdom, workspaces
 
@@ -32,3 +33,9 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(workspaces.router, prefix="/api/v1")
 app.include_router(billing.router, prefix="/api/v1")
 app.include_router(visdom.router, prefix="/api/v1")
+
+
+if settings.ADMIN_ENABLED:
+    if not settings.ADMIN_SECRET:
+        raise RuntimeError("ADMIN_ENABLED is set but ADMIN_SECRET is empty")
+    mount_admin(app, settings.ADMIN_SECRET)
