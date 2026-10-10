@@ -108,6 +108,18 @@ server {
         proxy_hide_header Set-Cookie;
     }
 
+    location = /vis/_shard {
+        allow 172.16.0.0/12;
+        deny all;
+
+        proxy_pass http://visdom_server/vis/health;
+        proxy_connect_timeout 2s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_set_header Host $http_host;
+        add_header X-Visdom-Upstream $upstream_addr always;
+        access_log off;
+    }
+
     location ~ ^/vis/w/(?<ws_slug>[^/]+)/(?<vis_rest>.*)$ {
         auth_request /_auth_verify;
         error_page 401 = @auth_redirect;
