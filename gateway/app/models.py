@@ -94,6 +94,8 @@ class Membership(Base):
     starred = Column(Boolean, default=False)
     status = Column(String, nullable=False, default="active", server_default="active")
 
+    __table_args__ = (Index("ix_memberships_workspace_user", "workspace_id", "user_id"),)
+
     # Relationships
     user = relationship("User", back_populates="memberships")
     workspace = relationship("Workspace", back_populates="memberships")
@@ -108,6 +110,8 @@ class WorkspaceInvite(Base):
     role = Column(String, default="member")
     invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_workspace_invites_workspace_id", "workspace_id", "id"),)
 
     # Relationships
     workspace = relationship("Workspace")
