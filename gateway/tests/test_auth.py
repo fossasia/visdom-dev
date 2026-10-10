@@ -1,5 +1,15 @@
 # Copyright 2017-present, The Visdom Authors
+from datetime import timedelta
+
 from app.config import settings
+from app.security import create_refresh_token
+
+
+def assert_session_was_not_renewed(response):
+    for cookie in response.headers.get_list("set-cookie"):
+        name_value = cookie.split(";", 1)[0]
+        if name_value.startswith(("refresh_token=", "session_token=")):
+            assert name_value.endswith("="), cookie
 
 
 def test_register_user(client):
@@ -86,6 +96,42 @@ def test_refresh_token(client):
     data = refresh_response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
+
+
+def test_refresh_token_after_logout_is_rejected(client, make_user):
+    """Logging out revokes a refresh token even if it is replayed by hand."""
+    make_user(email="refresh-logout@example.com")
+    stolen_refresh_token = client.cookies.get("refresh_token")
+    assert stolen_refresh_token
+
+    logout_response = client.post("/api/v1/auth/logout")
+    assert logout_response.status_code == 200
+    client.cookies.clear()
+
+    refresh_response = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={stolen_refresh_token}"},
+    )
+
+    assert refresh_response.status_code == 401
+    assert_session_was_not_renewed(refresh_response)
+
+
+def test_expired_refresh_token_is_rejected(client, make_user):
+    """An expired refresh cookie cannot renew the session."""
+    user = make_user(email="expired-refresh@example.com")
+    expired_refresh_token = create_refresh_token(
+        {"sub": user["id"], "tv": 0}, expires_delta=timedelta(seconds=-1)
+    )
+    client.cookies.clear()
+    client.cookies.set(
+        "refresh_token", expired_refresh_token, path="/api/v1/auth"
+    )
+
+    refresh_response = client.post("/api/v1/auth/refresh")
+
+    assert refresh_response.status_code == 401
+    assert_session_was_not_renewed(refresh_response)
 
 
 def test_logout_user(client):
