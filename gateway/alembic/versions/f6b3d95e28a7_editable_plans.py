@@ -58,6 +58,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
     )
     op.bulk_insert(plans, _SEED)
+    known = ", ".join("'%s'" % plan["id"] for plan in _SEED)
+    op.execute("UPDATE users SET tier = 'free' WHERE tier IS NOT NULL AND tier NOT IN (%s)" % known)
     op.create_foreign_key('fk_users_tier_plans', 'users', 'plans', ['tier'], ['id'])
 
 
