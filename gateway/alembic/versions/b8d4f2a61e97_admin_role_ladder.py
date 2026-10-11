@@ -19,7 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.execute("UPDATE admin_users SET role = 'support' WHERE role = 'viewer'")
     op.alter_column(
         'admin_users',
         'role',
