@@ -5,41 +5,27 @@ usage against plan limits, and (payment-free) plan changes.
 
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.billing import DEFAULT_TIER, get_plan, ordered_plans
+from app.billing import DEFAULT_TIER, get_plan, ordered_plans, selectable
 from app.dependencies import get_current_user, get_db
-from app.models import APIKey, Membership, User, Workspace
+from app.models import User
 from app.schemas import PlanResponse, SubscriptionResponse, SubscriptionUpdate
+from app.usage import usage
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
 def _build_subscription(db: Session, user: User) -> dict:
     tier = user.tier or DEFAULT_TIER
-    plan = get_plan(tier)
+    plan = get_plan(db, tier)
     limits = plan["limits"]
 
-    owned_ws_ids = [
-        row[0]
-        for row in db.query(Workspace.id).filter(Workspace.created_by == user.id).all()
-    ]
-    workspaces_used = len(owned_ws_ids)
-
-    members_used = 0
-    if owned_ws_ids:
-        members_used = (
-            db.query(Membership)
-            .filter(
-                Membership.workspace_id.in_(owned_ws_ids),
-                Membership.user_id != user.id,
-                Membership.status == "active",
-            )
-            .count()
-        )
-
-    api_keys_used = db.query(APIKey).filter(APIKey.user_id == user.id).count()
+    counts = usage(db, user)
+    workspaces_used = counts["workspaces"]
+    members_used = counts["members"]
+    api_keys_used = counts["api_keys"]
 
     return {
         "tier": tier,
@@ -53,9 +39,9 @@ def _build_subscription(db: Session, user: User) -> dict:
 
 
 @router.get("/plans", response_model=List[PlanResponse])
-def list_plans():
-    """Returns the full subscription plan catalog."""
-    return ordered_plans()
+def list_plans(db: Session = Depends(get_db)):
+    """Returns the plans an account can see and pick."""
+    return ordered_plans(db)
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)
@@ -73,7 +59,16 @@ def update_subscription(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Changes the current user's plan. No payment processing yet."""
+    """Changes the current user's plan. No payment processing yet.
+
+    Only a public, current plan can be picked here. An account cannot move
+    itself onto a hidden or archived plan, since changing plan costs nothing yet.
+    """
+    if not selectable(db, payload.tier):
+        raise HTTPException(
+            status_code=422,
+            detail="That plan is not available.",
+        )
     current_user.tier = payload.tier
     db.commit()
     db.refresh(current_user)

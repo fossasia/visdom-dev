@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.billing import at_limit, limit_for
 from app.config import settings
 from app.dependencies import commit_or_conflict, get_current_user, get_db
 from app.email import build_share_link_url, send_workspace_invite_email
@@ -26,6 +27,7 @@ from app.schemas.workspace import (
     MemberResponse,
     MemberRoleUpdate,
     MyWorkspaceResponse,
+    OwnerTransfer,
     PendingInviteResponse,
     SharedLinkCreate,
     SharedLinkJoinRequest,
@@ -35,6 +37,13 @@ from app.schemas.workspace import (
     WorkspaceCreate,
 )
 from app.security import get_password_hash, verify_password
+from app.usage import (
+    members_used,
+    refuse_if_at_limit,
+    refuse_if_full,
+    refuse_if_no_seat,
+    workspaces_used,
+)
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -63,6 +72,12 @@ def _require_admin(db: Session, workspace_id: uuid.UUID, user_id: uuid.UUID) -> 
             detail="Only workspace admins can perform this action.",
         )
     return membership
+
+
+def _owner_of(db: Session, workspace: Workspace) -> User | None:
+    if workspace.created_by is None:
+        return None
+    return db.query(User).filter(User.id == workspace.created_by).first()
 
 
 def _to_member_response(membership: Membership) -> MemberResponse:
@@ -129,6 +144,7 @@ def create_workspace(
             detail="A workspace with this slug already exists.",
         )
 
+    refuse_if_at_limit(db, current_user, "workspaces")
     workspace = Workspace(name=workspace_in.name, slug=workspace_in.slug, created_by=current_user.id)
     db.add(workspace)
     try:
@@ -210,6 +226,8 @@ def invite_member(
     workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+
+    refuse_if_no_seat(db, _owner_of(db, workspace) or current_user)
 
     email_lower = invite.email.strip().lower()
     invitee = db.query(User).filter(User.email == email_lower).first()
@@ -315,6 +333,78 @@ def update_member_role(
     return _to_member_response(membership)
 
 
+@router.post("/{workspace_id}/owner", response_model=MyWorkspaceResponse)
+def transfer_ownership(
+    workspace_id: uuid.UUID,
+    payload: OwnerTransfer,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Hand the workspace to another active member. Owner only.
+
+    The new owner becomes an admin and the workspace counts against their plan
+    from then on, so the move is refused when their plan has no room for it.
+    The previous owner stays on as an admin, and can leave afterwards like
+    anyone else.
+    """
+    membership = _require_admin(db, workspace_id, current_user.id)
+    workspace = (
+        db.query(Workspace)
+        .filter(Workspace.id == workspace_id)
+        .with_for_update()
+        .first()
+    )
+    if not workspace:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+    if workspace.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the workspace owner can hand it over.",
+        )
+    if payload.user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You already own this workspace.",
+        )
+
+    target = _get_membership(db, workspace_id, payload.user_id)
+    if not target or target.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Only an active member of this workspace can become its owner.",
+        )
+
+    new_owner = target.user
+    tier = new_owner.tier or "free"
+    if at_limit(db, tier, "workspaces", workspaces_used(db, new_owner)):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"{new_owner.email} has no room for another workspace on the {tier} plan.",
+        )
+    arriving = (
+        db.query(Membership)
+        .filter(
+            Membership.workspace_id == workspace_id,
+            Membership.status == "active",
+            Membership.user_id != new_owner.id,
+        )
+        .count()
+    )
+    ceiling = limit_for(db, tier, "members")
+    if ceiling is not None and members_used(db, new_owner) + arriving > ceiling:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"{new_owner.email} has no room for this many members on the {tier} plan.",
+        )
+
+    target.role = "admin"
+    workspace.created_by = new_owner.id
+    db.commit()
+    db.refresh(workspace)
+    db.refresh(membership)
+    return _to_my_workspace_response(workspace, membership)
+
+
 @router.delete("/{workspace_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_member(
     workspace_id: uuid.UUID,
@@ -418,6 +508,10 @@ def approve_member(
             detail="There's no join request awaiting approval for this member.",
         )
 
+    owner = _owner_of(db, membership.workspace)
+    if owner is not None:
+        refuse_if_no_seat(db, owner)
+
     membership.status = "active"
     db.commit()
     db.refresh(membership)
@@ -439,6 +533,10 @@ def accept_invite(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="There's no pending invite for you to accept in this workspace.",
         )
+
+    owner = _owner_of(db, membership.workspace)
+    if owner is not None and owner.id != current_user.id:
+        refuse_if_full(db, owner)
 
     membership.status = "active"
     db.commit()

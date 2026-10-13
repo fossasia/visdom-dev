@@ -72,6 +72,10 @@ class MemberRoleUpdate(BaseModel):
     role: RoleLiteral
 
 
+class OwnerTransfer(BaseModel):
+    user_id: uuid.UUID
+
+
 # --- SHARED LINK SCHEMAS ---
 class SharedLinkCreate(BaseModel):
     role: RoleLiteral = "member"

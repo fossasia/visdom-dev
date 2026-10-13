@@ -216,6 +216,7 @@ fetchWorkspaces();
                 currentUserId={user?.id}
                 isAdmin={isAdmin}
                 ownerId={activeWorkspace.created_by}
+                onOwnerChanged={handleWorkspaceUpdated}
               />
             )}
 

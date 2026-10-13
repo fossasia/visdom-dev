@@ -67,7 +67,7 @@ const WorkspaceSettingsTab = ({ workspace, isAdmin, currentUserId, onDeleted, on
         </div>
         <p className="gc-panel-sub">
           {isOwner
-            ? "You created this workspace. You can leave at any time — no one else can remove you."
+            ? 'You own this workspace, so no one else can remove you. To leave it with someone else in charge, make them the owner from the Members tab first.'
             : 'You can leave this workspace at any time.'}
         </p>
         <button className="gc-btn" onClick={handleLeave} disabled={leaving} type="button">
