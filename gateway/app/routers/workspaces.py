@@ -38,6 +38,9 @@ from app.schemas.workspace import (
 )
 from app.security import get_password_hash, verify_password
 from app.usage import (
+    hold_account,
+    invites_waiting,
+    invites_waiting_in,
     members_used,
     refuse_if_at_limit,
     refuse_if_full,
@@ -375,6 +378,7 @@ def transfer_ownership(
         )
 
     new_owner = target.user
+    hold_account(db, new_owner)
     tier = new_owner.tier or "free"
     if at_limit(db, tier, "workspaces", workspaces_used(db, new_owner)):
         raise HTTPException(
@@ -390,8 +394,10 @@ def transfer_ownership(
         )
         .count()
     )
+    arriving += invites_waiting_in(db, workspace_id)
     ceiling = limit_for(db, tier, "members")
-    if ceiling is not None and members_used(db, new_owner) + arriving > ceiling:
+    held = members_used(db, new_owner) + invites_waiting(db, new_owner)
+    if ceiling is not None and held + arriving > ceiling:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=f"{new_owner.email} has no room for this many members on the {tier} plan.",

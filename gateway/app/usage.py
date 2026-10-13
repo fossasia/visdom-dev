@@ -66,6 +66,20 @@ def invites_waiting(db: Session, user: User) -> int:
     return unanswered + unregistered
 
 
+def invites_waiting_in(db: Session, workspace_id) -> int:
+    """Invites sent and not yet answered in one workspace."""
+    unanswered = (
+        db.query(Membership)
+        .filter(
+            Membership.workspace_id == workspace_id,
+            Membership.status == "pending_acceptance",
+        )
+        .count()
+    )
+    unregistered = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id == workspace_id).count()
+    return unanswered + unregistered
+
+
 def api_keys_used(db: Session, user: User) -> int:
     return db.query(APIKey).filter(APIKey.user_id == user.id).count()
 
@@ -87,8 +101,19 @@ def usage(db: Session, user: User) -> dict:
     return {name: count(db, user) for name, count in COUNTERS.items()}
 
 
+def hold_account(db: Session, user: User) -> None:
+    """Make checks against this account's limits wait for one another.
+
+    A check counts rows and the caller adds one afterwards, so two requests at
+    once could both find room. Holding the account's row until the caller
+    commits lets only one of them count at a time.
+    """
+    db.query(User.id).filter(User.id == user.id).with_for_update().first()
+
+
 def refuse_if_at_limit(db: Session, user: User, resource: str) -> None:
     """Stop a creation that the account's plan does not allow."""
+    hold_account(db, user)
     tier = user.tier or "free"
     if not at_limit(db, tier, resource, COUNTERS[resource](db, user)):
         return
@@ -105,6 +130,7 @@ def refuse_if_no_seat(db: Session, owner: User) -> None:
     accepted let an owner send any number of invites while under the limit and
     end up with all of them as members.
     """
+    hold_account(db, owner)
     tier = owner.tier or "free"
     ceiling = limit_for(db, tier, "members")
     if ceiling is None:
@@ -130,6 +156,7 @@ def refuse_if_full(db: Session, owner: User) -> None:
     the invite that was sent before seats were held, or the plan that shrank
     while it waited.
     """
+    hold_account(db, owner)
     tier = owner.tier or "free"
     ceiling = limit_for(db, tier, "members")
     if ceiling is None or members_used(db, owner) < ceiling:

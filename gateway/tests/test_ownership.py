@@ -121,3 +121,23 @@ def test_refused_when_the_members_would_not_fit(client, make_user, make_workspac
     refused = _hand_over(client, workspace, owner, member)
     assert refused.status_code == 402
     assert "members" in refused.json()["detail"]
+
+
+def test_invites_still_waiting_count_as_members_arriving(client, make_user, make_workspace, add_member):
+    owner = make_user()
+    member = make_user()
+    workspace = make_workspace(owner)
+    add_member(owner, workspace, member)
+    for _ in range(2):
+        add_member(owner, workspace, make_user())
+
+    invited = client.post(
+        f"{WORKSPACES}/{workspace['id']}/members",
+        json={"email": "not-here-yet@example.com", "role": "member"},
+        headers=owner["headers"],
+    )
+    assert invited.status_code == 201, invited.text
+
+    refused = _hand_over(client, workspace, owner, member)
+    assert refused.status_code == 402
+    assert "members" in refused.json()["detail"]
