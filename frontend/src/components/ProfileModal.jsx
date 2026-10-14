@@ -183,32 +183,35 @@ const ProfileModal = ({ onClose }) => {
 
       <form onSubmit={handleChangePassword} className="gc-password-form">
         <div className="gc-field">
-          <label className="gc-label gc-mb-1">Change password</label>
+          <label htmlFor="profile-current-password" className="gc-label gc-mb-1">Current password</label>
           <PasswordInput
+            id="profile-current-password"
             className="gc-input"
             required
             autoComplete="current-password"
-            placeholder="Current password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
           />
         </div>
         <div className="gc-field">
+          <label htmlFor="profile-new-password" className="gc-label gc-mb-1">New password</label>
           <PasswordInput
+            id="profile-new-password"
             className="gc-input"
             required
             autoComplete="new-password"
-            placeholder={`New password, at least ${MIN_PASSWORD} characters`}
+            placeholder={`At least ${MIN_PASSWORD} characters`}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
         </div>
         <div className="gc-field">
+          <label htmlFor="profile-confirm-password" className="gc-label gc-mb-1">Confirm new password</label>
           <PasswordInput
+            id="profile-confirm-password"
             className="gc-input"
             required
             autoComplete="new-password"
-            placeholder="Re-enter new password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
           />

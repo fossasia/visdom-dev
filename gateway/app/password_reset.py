@@ -31,6 +31,7 @@ def _digest(token: str) -> str:
 def issue(db, user: User, now: datetime.datetime | None = None) -> str | None:
     """A new token for ``user``, or None when they have had ``PER_HOUR`` this hour."""
     now = now or utcnow()
+    db.query(User.id).filter(User.id == user.id).with_for_update().first()
     db.query(PasswordReset).filter(PasswordReset.expires_at < now - datetime.timedelta(days=1)).delete(
         synchronize_session=False
     )

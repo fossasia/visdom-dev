@@ -55,6 +55,7 @@ const ForgotPassword = () => {
   }
 
   if (outcome) {
+    const help = supportHref(outcome.support_contact, 'Password reset');
     return (
       <AuthShell subtitle="Check your inbox">
         <p style={MESSAGE}>
@@ -64,6 +65,11 @@ const ForgotPassword = () => {
         <AuthNote>
           Nothing arrived?{' '}
           <AuthTextButton onClick={() => setOutcome(null)}>Send another</AuthTextButton>
+          {help && (
+            <>
+              {' '}or <AuthLink href={help}>contact support</AuthLink>
+            </>
+          )}
         </AuthNote>
         {backToSignIn}
       </AuthShell>
