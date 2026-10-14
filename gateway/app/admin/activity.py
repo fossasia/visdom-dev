@@ -40,11 +40,28 @@ def instance_addresses() -> list[str]:
     return _SERVER_PATTERN.findall(settings.VISDOM_SERVERS or "")
 
 
+_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _read_within(response, deadline: float) -> bytes:
+    body = bytearray()
+    while True:
+        if time.monotonic() > deadline:
+            raise TimeoutError("answer took too long")
+        chunk = response.read(65536)
+        if not chunk:
+            return bytes(body)
+        body += chunk
+        if len(body) > _MAX_BYTES:
+            raise ValueError("answer too large")
+
+
 def _ask(address: str, timeout: float) -> list[dict]:
     url = f"http://{address}/vis/_activity"
+    deadline = time.monotonic() + timeout
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
-            payload = json.loads(response.read() or b"{}")
+            payload = json.loads(_read_within(response, deadline) or b"{}")
     except (urllib.error.URLError, OSError, ValueError) as exc:
         logging.warning("could not read activity from %s: %s", address, exc)
         return []
@@ -84,6 +101,22 @@ async def refresh_activity() -> None:
 def known_activity() -> dict[str, dict]:
     """The last answer fetched, without asking the instances again."""
     return _cache["value"]
+
+
+def _is_count(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _usable(entry: dict) -> bool:
+    if not isinstance(entry.get("workspace_id"), str) or not entry["workspace_id"]:
+        return False
+    if not all(_is_count(entry.get(key, 0)) for key in ("viewers", "writers")):
+        return False
+    return all(entry.get(key) is None or _is_number(entry[key]) for key in ("last_active_at", "bytes"))
 
 
 def _combine(merged: dict[str, dict], workspace_id: str, entry: dict) -> None:
@@ -129,7 +162,6 @@ def activity_by_workspace(timeout: float | None = None) -> dict[str, dict]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
         for entries in pool.map(lambda a: _ask(a, timeout), addresses):
             for entry in entries:
-                workspace_id = entry.get("workspace_id")
-                if workspace_id:
-                    _combine(merged, workspace_id, entry)
+                if _usable(entry):
+                    _combine(merged, entry["workspace_id"], entry)
     return merged

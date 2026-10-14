@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from starlette.testclient import TestClient
 
 from app.admin import panel
-from app.models import AdminUser, APIKey, Membership, User, Workspace
+from app.models import AdminUser, APIKey, Membership, User, Workspace, WorkspaceInvite
 from app.security import get_password_hash
 
 PAGES = [
@@ -110,3 +110,48 @@ def test_the_detail_pages_render(staff_panel):
 def test_a_viewer_is_not_served_the_cleanup_page(staff_panel):
     response = staff_panel("viewer@example.com").get("/admin/janitor", follow_redirects=False)
     assert response.status_code == 403
+
+
+def test_a_viewer_does_not_see_invites_keys_or_links_on_a_workspace(staff_panel):
+    db = panel.SessionLocal()
+    db.add(WorkspaceInvite(workspace_id=staff_panel.workspace_id, email="guest@example.com", role="read"))
+    db.commit()
+    db.close()
+    path = f"/admin/workspace/details/{staff_panel.workspace_id}"
+
+    page = staff_panel("viewer@example.com").get(path, follow_redirects=False)
+    assert page.status_code == 200
+    assert "guest@example.com" not in page.text
+    assert "hidden" in page.text
+
+    page = staff_panel("staff@example.com").get(path, follow_redirects=False)
+    assert "guest@example.com" in page.text
+
+
+def test_overview_links_follow_where_the_panel_is_mounted(db_session, monkeypatch):
+    bind = db_session.get_bind()
+    engine = getattr(bind, "engine", bind)
+    staff_sessions = sessionmaker(bind=engine)
+    monkeypatch.setattr(panel, "SessionLocal", staff_sessions)
+    monkeypatch.setattr(panel, "engine", engine)
+    db = staff_sessions()
+    db.add(
+        AdminUser(
+            id=uuid.uuid4(),
+            email="boss@example.com",
+            password_hash=get_password_hash("staffpassword"),
+            role="superadmin",
+            is_active=True,
+        )
+    )
+    db.commit()
+    db.close()
+
+    app = FastAPI()
+    panel.mount_admin(app, secret_key="test-secret-for-the-admin-session", base_url="/staff")
+    with TestClient(app) as client:
+        client.post("/staff/login", data={"username": "boss@example.com", "password": "staffpassword"})
+        page = client.get("/staff/", follow_redirects=False)
+    assert page.status_code == 200
+    assert "/staff/user/list" in page.text
+    assert "/admin/user/list" not in page.text

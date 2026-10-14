@@ -300,6 +300,15 @@ def _key_lines(model, name):
         db.close()
 
 
+def _for_roles_that_see(model_name, formatter):
+    def format(model, name, request):
+        if not roles.can_see(request.session.get(ROLE_KEY), model_name):
+            return "hidden"
+        return formatter(model, name)
+
+    return format
+
+
 def _link_lines(model, name):
     db = SessionLocal()
     try:
@@ -402,9 +411,9 @@ class WorkspaceAdmin(RoleScopedView, model=Workspace):
         "last_active": _workspace_last_active,
         "size": _workspace_size,
         "members": _member_lines,
-        "invites": _invite_lines,
-        "keys": _key_lines,
-        "links": _link_lines,
+        "invites": _for_roles_that_see("WorkspaceInvite", _invite_lines),
+        "keys": _for_roles_that_see("APIKey", _key_lines),
+        "links": _for_roles_that_see("WorkspaceInvite", _link_lines),
     }
 
     async def list(self, request: Request):
@@ -574,7 +583,6 @@ _CARDS = (
 def overview_cards(request):
     """Counts for the models the signed-in role is allowed to see."""
     role = request.session.get(ROLE_KEY)
-    base = str(request.base_url).rstrip("/")
     cards = []
     db = SessionLocal()
     try:
@@ -584,7 +592,7 @@ def overview_cards(request):
             cards.append({
                 "label": label,
                 "count": db.query(model).count(),
-                "url": "%s/admin/%s/list" % (base, slug),
+                "url": str(request.url_for("admin:list", identity=slug)),
             })
     except Exception as exc:
         logging.warning("overview counts failed: %s", exc)
