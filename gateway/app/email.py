@@ -61,14 +61,20 @@ def send(to: str, subject: str, body: str) -> bool:
                 relay.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             relay.send_message(message)
     except (smtplib.SMTPException, OSError) as exc:
-        logger.warning("could not send %r to %s: %s", subject, to, exc)
+        logger.error("could not send %r to %s: %s", subject, to, exc)
         return False
     return True
 
 
 def send_later(to: str, subject: str, body: str) -> None:
     """Send without making the caller wait on the relay."""
-    _background.submit(send, to, subject, body)
+
+    def report(future):
+        exc = future.exception()
+        if exc is not None:
+            logger.error("could not send %r to %s", subject, to, exc_info=exc)
+
+    _background.submit(send, to, subject, body).add_done_callback(report)
 
 
 def send_workspace_invite_email(to_email: str, workspace_name: str, invite_url: str) -> None:

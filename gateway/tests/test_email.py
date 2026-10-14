@@ -1,6 +1,8 @@
 # Copyright 2017-present, The Visdom Authors
 """Outbound email through the configured relay, and nothing when there is none."""
+import logging
 import smtplib
+from concurrent.futures import Future
 
 import pytest
 
@@ -92,6 +94,28 @@ def test_a_relay_failure_is_reported_not_raised(relay, monkeypatch):
 
     monkeypatch.setattr(FakeRelay, "send_message", refuse)
     assert email.send("someone@example.com", "Hello", "Body") is False
+
+
+def test_an_unexpected_error_in_a_background_send_is_logged(monkeypatch, caplog):
+    class RightAway:
+        def submit(self, fn, *args):
+            future = Future()
+            try:
+                future.set_result(fn(*args))
+            except Exception as exc:
+                future.set_exception(exc)
+            return future
+
+    def broken(to, subject, body):
+        raise RuntimeError("relay went away")
+
+    monkeypatch.setattr(email, "_background", RightAway())
+    monkeypatch.setattr(email, "send", broken)
+    with caplog.at_level(logging.ERROR, logger="visdom.email"):
+        email.send_later("someone@example.com", "Hello", "Body")
+
+    assert "someone@example.com" in caplog.text
+    assert "relay went away" in caplog.text
 
 
 def test_an_invite_is_sent_without_making_the_request_wait(monkeypatch):
