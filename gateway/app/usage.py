@@ -11,11 +11,13 @@ Shared by the billing page and by the checks that refuse a creation, so the
 number someone is shown and the number they are held to are the same one.
 """
 
+import datetime
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.billing import at_limit, limit_for
-from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite
+from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, utcnow
 
 
 def owned_workspace_ids(db: Session, user: User, include_trashed: bool = False) -> list:
@@ -80,13 +82,27 @@ def invites_waiting_in(db: Session, workspace_id) -> int:
     return unanswered + unregistered
 
 
+def seats_held(db: Session, user: User) -> int:
+    return members_used(db, user) + invites_waiting(db, user)
+
+
+def _still_works(expires_at, now) -> bool:
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+    return now <= expires_at
+
+
 def api_keys_used(db: Session, user: User) -> int:
-    return db.query(APIKey).filter(APIKey.user_id == user.id).count()
+    now = utcnow()
+    rows = db.query(APIKey.expires_at).filter(APIKey.user_id == user.id, APIKey.is_active.is_(True)).all()
+    return sum(1 for (expires_at,) in rows if _still_works(expires_at, now))
 
 
 COUNTERS = {
     "workspaces": workspaces_used,
-    "members": members_used,
+    "members": seats_held,
     "api_keys": api_keys_used,
 }
 

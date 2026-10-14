@@ -158,12 +158,23 @@ def validate_features(features) -> list:
     return [f.strip() for f in features if f.strip()]
 
 
+def _readable_limits(limits) -> dict:
+    limits = limits if isinstance(limits, dict) else {}
+    clean = {}
+    for key in LIMIT_KEYS:
+        value = limits.get(key, 0)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+            value = 0
+        clean[key] = value
+    return clean
+
+
 def _as_dict(plan: Plan) -> dict:
     return {
         "id": plan.id,
         "name": plan.name,
         "price": plan.price,
-        "limits": {key: (plan.limits or {}).get(key) for key in LIMIT_KEYS},
+        "limits": _readable_limits(plan.limits),
         "retention_days": plan.retention_days,
         "features": list(plan.features or []),
     }

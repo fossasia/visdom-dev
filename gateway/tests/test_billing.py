@@ -65,7 +65,7 @@ def test_subscription_usage_counts(client, make_user, make_workspace, add_member
 
     usage = client.get(f"{BILLING}/subscription", headers=owner["headers"]).json()["usage"]
     assert usage["workspaces"]["used"] == 2
-    assert usage["members"]["used"] == 1
+    assert usage["members"]["used"] == 2
     assert usage["api_keys"]["used"] == 1
 
     member_usage = client.get(f"{BILLING}/subscription", headers=member["headers"]).json()["usage"]
@@ -343,3 +343,68 @@ def test_an_untouched_features_box_saves_as_no_features():
     assert validate_features({}) == []
     assert validate_features(None) == []
     assert validate_features(["  one  ", ""]) == ["one"]
+
+
+def test_an_expired_or_revoked_key_frees_its_slot(client, make_user, db_session):
+    import datetime
+
+    from app.models import APIKey, User
+
+    user = make_user()
+    for n in range(2):
+        made = client.post(KEYS, json={"name": f"old-{n}", "scope": "org"}, headers=user["headers"])
+        assert made.status_code == 201, made.text
+
+    record = db_session.query(User).filter(User.email == user["email"]).first()
+    expired, revoked = db_session.query(APIKey).filter(APIKey.user_id == record.id).order_by(APIKey.name).all()
+    expired.expires_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+    revoked.is_active = False
+    db_session.commit()
+
+    shown = client.get(f"{BILLING}/subscription", headers=user["headers"]).json()
+    assert shown["usage"]["api_keys"] == {"used": 0, "limit": 2}
+    for n in range(2):
+        made = client.post(KEYS, json={"name": f"new-{n}", "scope": "org"}, headers=user["headers"])
+        assert made.status_code == 201, made.text
+    refused = client.post(KEYS, json={"name": "new-2", "scope": "org"}, headers=user["headers"])
+    assert refused.status_code == 402
+
+
+def test_a_bad_limit_in_a_stored_plan_allows_nothing(client, make_user, db_session):
+    plan = _plan(db_session, "broken")
+    plan.limits = {"workspaces": -1, "members": "3", "api_keys": None}
+    db_session.commit()
+    user = make_user()
+    _put_on(db_session, user, "broken")
+
+    shown = client.get(f"{BILLING}/subscription", headers=user["headers"]).json()
+    assert shown["plan"]["limits"] == {
+        "workspaces": 0,
+        "members": 0,
+        "api_keys": None,
+        "storage_mb": 0,
+        "workspace_storage_mb": 0,
+    }
+    refused = client.post(WORKSPACES, json={"name": "B", "slug": "broken-one"}, headers=user["headers"])
+    assert refused.status_code == 402
+
+
+def test_the_billing_page_counts_invites_still_waiting(client, make_user, db_session):
+    _plan(db_session, "pair", members=2)
+    owner = make_user()
+    _put_on(db_session, owner, "pair")
+    workspace = client.post(WORKSPACES, json={"name": "P", "slug": "pair-one"}, headers=owner["headers"]).json()
+
+    def invite(email):
+        return client.post(
+            f"{WORKSPACES}/{workspace['id']}/members",
+            json={"email": email, "role": "member"},
+            headers=owner["headers"],
+        )
+
+    assert invite(make_user()["email"]).status_code == 201
+    assert invite("no-account-yet@example.com").status_code == 201
+
+    shown = client.get(f"{BILLING}/subscription", headers=owner["headers"]).json()
+    assert shown["usage"]["members"] == {"used": 2, "limit": 2}
+    assert invite(make_user()["email"]).status_code == 402
