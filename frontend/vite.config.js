@@ -7,9 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
-    esbuild: {
-      jsx: 'automatic',
-    },
+    ...(process.env.VITEST ? { esbuild: { jsx: 'automatic' } } : {}),
     test: {
       environment: 'jsdom',
       globals: true,

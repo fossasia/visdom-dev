@@ -46,6 +46,8 @@ map $request_uri $auth_limit_key {
     default                    "";
     "~^/api/v1/auth/login"     $binary_remote_addr;
     "~^/api/v1/auth/register"  $binary_remote_addr;
+    "~^/api/v1/auth/forgot-password" $binary_remote_addr;
+    "~^/api/v1/auth/reset-password"  $binary_remote_addr;
     "~^/admin/login"           $binary_remote_addr;
 }
 
