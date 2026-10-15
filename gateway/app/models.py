@@ -136,6 +136,8 @@ class Membership(Base):
     starred = Column(Boolean, default=False)
     status = Column(String, nullable=False, default="active", server_default="active")
 
+    __table_args__ = (Index("ix_memberships_workspace_user", "workspace_id", "user_id"),)
+
     user = relationship("User", back_populates="memberships")
     workspace = relationship("Workspace", back_populates="memberships")
 
@@ -152,8 +154,8 @@ class WorkspaceInvite(Base):
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "email", name="uq_workspace_invites_workspace_email"),
+        Index("ix_workspace_invites_workspace_id", "workspace_id", "id"),
     )
-
     workspace = relationship("Workspace")
 
 

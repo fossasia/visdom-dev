@@ -8,19 +8,26 @@ import InviteMemberModal from './InviteMemberModal';
 import { cachedGet, invalidate } from '../../utils/requestCache';
 import { ROLE_BADGE, parseApiError } from '../../utils/helpers';
 
+const MEMBER_PAGE_SIZE = 100;
+
 const MembersTab = ({ workspaceId, currentUserId, isAdmin, ownerId }) => {
   const [members, setMembers] = useState([]);
+  const [totalMembers, setTotalMembers] = useState(0);
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const confirm = useConfirm();
   const toast = useToast();
 
   const fetchMembers = useCallback(async () => {
-    const key = `/workspaces/${workspaceId}/members`;
+    const key = `/workspaces/${workspaceId}/members?limit=${MEMBER_PAGE_SIZE}`;
     setLoading(true);
     try {
       const data = await cachedGet(key, () => api.get(key).then((res) => res.data));
-      setMembers(data);
+      setMembers(data.items);
+      setTotalMembers(data.total);
+      setNextCursor(data.next_cursor);
     } catch (err) {
       console.error('Error fetching members', err);
     } finally {
@@ -28,15 +35,33 @@ const MembersTab = ({ workspaceId, currentUserId, isAdmin, ownerId }) => {
     }
   }, [workspaceId]);
 
+  const loadMoreMembers = async () => {
+    if (!nextCursor || loadingMore) return;
+
+    setLoadingMore(true);
+    try {
+      const response = await api.get(
+        `/workspaces/${workspaceId}/members?limit=${MEMBER_PAGE_SIZE}&cursor=${encodeURIComponent(nextCursor)}`
+      );
+      setMembers((prev) => [...prev, ...response.data.items]);
+      setTotalMembers(response.data.total);
+      setNextCursor(response.data.next_cursor);
+    } catch (err) {
+      toast.error(parseApiError(err, 'Failed to load more members.'));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
 fetchMembers();
   }, [fetchMembers]);
 
-  const handleInvited = (member) => {
+  const handleInvited = async () => {
     setShowInvite(false);
     invalidate(`/workspaces/${workspaceId}/members`);
-    setMembers((prev) => [...prev, member]);
+    await fetchMembers();
   };
 
   const handleRoleChange = async (userId, role) => {
@@ -63,6 +88,7 @@ fetchMembers();
       await api.delete(`/workspaces/${workspaceId}/members/${userId}`);
       invalidate(`/workspaces/${workspaceId}/members`);
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
+      setTotalMembers((prev) => Math.max(0, prev - 1));
       toast.success('Member removed.');
     } catch (err) {
       toast.error(parseApiError(err, 'Failed to remove member.'));
@@ -86,6 +112,7 @@ fetchMembers();
       }
       invalidate(`/workspaces/${workspaceId}/members`);
       setMembers((prev) => prev.filter((m) => m !== member));
+      setTotalMembers((prev) => Math.max(0, prev - 1));
       toast.success(opts.successMessage);
     } catch (err) {
       toast.error(parseApiError(err, 'Failed to cancel.'));
@@ -108,7 +135,7 @@ fetchMembers();
       <div className="gc-panel-header">
         <span className="gc-panel-title">
           <Users size={15} />
-          Members ({members.length})
+          Members ({totalMembers})
         </span>
         {isAdmin && (
           <button className="gc-btn gc-btn-primary" onClick={() => setShowInvite(true)} type="button">
@@ -232,6 +259,19 @@ fetchMembers();
               </div>
             );
           })}
+        </div>
+      )}
+
+      {!loading && nextCursor && (
+        <div className="gc-row">
+          <button
+            className="gc-btn"
+            disabled={loadingMore}
+            onClick={loadMoreMembers}
+            type="button"
+          >
+            {loadingMore ? 'Loading...' : `Load more (${members.length} of ${totalMembers})`}
+          </button>
         </div>
       )}
 

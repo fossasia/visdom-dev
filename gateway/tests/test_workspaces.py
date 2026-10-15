@@ -19,7 +19,7 @@ def test_create_workspace(client, make_user):
 
     members = client.get(f"{WORKSPACES}/{data['id']}/members", headers=user["headers"])
     assert members.status_code == 200
-    assert members.json() == [
+    assert members.json()["items"] == [
         {
             "user_id": user["id"],
             "invite_id": None,

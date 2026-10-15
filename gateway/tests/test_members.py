@@ -1,4 +1,8 @@
 # Copyright 2017-present, The Visdom Authors
+from sqlalchemy import event
+
+from app.models import Membership, User, WorkspaceInvite
+
 WORKSPACES = "/api/v1/workspaces"
 
 
@@ -95,7 +99,7 @@ def test_invitee_can_decline_invite(client, make_user, make_workspace):
     assert declined.status_code == 204
     assert client.get(f"{WORKSPACES}/invites/pending", headers=invitee["headers"]).json() == []
 
-    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()
+    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()["items"]
     assert [m["user_id"] for m in members] == [owner["id"]]
 
     re_invited = client.post(
@@ -276,7 +280,7 @@ def test_unregistered_email_invite_lifecycle(client, make_user, make_workspace, 
         f"{WORKSPACES}/{workspace['id']}/invites/{invite_id}", headers=owner["headers"]
     )
     assert cancelled.status_code == 204
-    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()
+    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()["items"]
     assert all(m["invite_id"] is None for m in members)
 
     client.post(
@@ -291,7 +295,7 @@ def test_unregistered_email_invite_lifecycle(client, make_user, make_workspace, 
     assert pending[0]["workspace"]["id"] == workspace["id"]
     assert pending[0]["role"] == "viewer"
 
-    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()
+    members = client.get(f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]).json()["items"]
     ghost_row = next(m for m in members if m["email"] == ghost_email)
     assert ghost_row["user_id"] == ghost["id"]
     assert ghost_row["invite_id"] is None
@@ -302,3 +306,118 @@ def test_unregistered_email_invite_lifecycle(client, make_user, make_workspace, 
     assert accepted.status_code == 200
     assert accepted.json()["status"] == "active"
     assert accepted.json()["role"] == "viewer"
+
+
+def test_list_members_paginates_members_and_invites(client, db_session, make_user, make_workspace):
+    owner = make_user()
+    workspace = make_workspace(owner)
+    members = [
+        User(
+            email=f"page-member-{index}@example.com",
+            username=f"page-member-{index}",
+            password_hash="unused",
+        )
+        for index in range(2)
+    ]
+    db_session.add_all(members)
+    db_session.flush()
+    db_session.add_all(
+        Membership(user_id=member.id, workspace_id=workspace["id"], role="member")
+        for member in members
+    )
+    db_session.add_all(
+        WorkspaceInvite(
+            workspace_id=workspace["id"],
+            email=f"pending-{index}@example.com",
+            role="viewer",
+        )
+        for index in range(2)
+    )
+    db_session.flush()
+
+    first_page = client.get(
+        f"{WORKSPACES}/{workspace['id']}/members?limit=2", headers=owner["headers"]
+    )
+    assert first_page.status_code == 200
+    assert first_page.json()["total"] == 5
+    assert len(first_page.json()["items"]) == 2
+    assert first_page.json()["next_cursor"]
+
+    second_page = client.get(
+        f"{WORKSPACES}/{workspace['id']}/members?limit=2&cursor={first_page.json()['next_cursor']}",
+        headers=owner["headers"],
+    )
+    assert second_page.status_code == 200
+    assert second_page.json()["total"] == 5
+    assert len(second_page.json()["items"]) == 2
+    assert second_page.json()["items"][0]["user_id"] is not None
+    assert second_page.json()["items"][1]["invite_id"] is not None
+
+    final_page = client.get(
+        f"{WORKSPACES}/{workspace['id']}/members?limit=2&cursor={second_page.json()['next_cursor']}",
+        headers=owner["headers"],
+    )
+    assert final_page.status_code == 200
+    assert final_page.json()["items"][0]["invite_id"] is not None
+    assert final_page.json()["next_cursor"] is None
+
+
+def test_list_members_is_bounded_and_does_not_query_users_per_member(
+    client, db_session, make_user, make_workspace
+):
+    owner = make_user()
+    workspace = make_workspace(owner)
+    members = [
+        User(
+            email=f"many-member-{index}@example.com",
+            username=f"many-member-{index}",
+            password_hash="unused",
+        )
+        for index in range(105)
+    ]
+    db_session.add_all(members)
+    db_session.flush()
+    db_session.add_all(
+        Membership(user_id=member.id, workspace_id=workspace["id"], role="member")
+        for member in members
+    )
+    db_session.flush()
+
+    statements = []
+
+    def record_statement(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", record_statement)
+    try:
+        response = client.get(
+            f"{WORKSPACES}/{workspace['id']}/members", headers=owner["headers"]
+        )
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", record_statement)
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 100
+    assert response.json()["total"] == 106
+    assert response.json()["next_cursor"]
+
+    selects_from_users = [statement for statement in statements if "FROM USERS" in statement.upper()]
+    assert len(selects_from_users) == 1  # Authentication only; member user data is joined eagerly.
+
+    paged_membership_selects = [
+        statement
+        for statement in statements
+        if "FROM MEMBERSHIPS" in statement.upper() and "JOIN USERS" in statement.upper()
+    ]
+    assert len(paged_membership_selects) == 1
+    assert "LIMIT" in paged_membership_selects[0].upper()
+
+    too_large = client.get(
+        f"{WORKSPACES}/{workspace['id']}/members?limit=101", headers=owner["headers"]
+    )
+    assert too_large.status_code == 422
+
+    invalid_cursor = client.get(
+        f"{WORKSPACES}/{workspace['id']}/members?cursor=invalid", headers=owner["headers"]
+    )
+    assert invalid_cursor.status_code == 422
