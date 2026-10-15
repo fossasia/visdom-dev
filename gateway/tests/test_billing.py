@@ -408,3 +408,21 @@ def test_the_billing_page_counts_invites_still_waiting(client, make_user, db_ses
     shown = client.get(f"{BILLING}/subscription", headers=owner["headers"]).json()
     assert shown["usage"]["members"] == {"used": 2, "limit": 2}
     assert invite(make_user()["email"]).status_code == 402
+
+
+def test_holding_an_account_reads_its_current_plan(make_user, db_session):
+    """A plan change that commits while a request waits for the lock must be
+    the one its limits are checked against."""
+    from sqlalchemy import update
+
+    from app.models import User
+    from app.usage import hold_account
+
+    user = make_user()
+    record = db_session.query(User).filter(User.email == user["email"]).first()
+    assert record.tier == "free"
+    moved = update(User).where(User.id == record.id).values(tier="pro")
+    db_session.execute(moved.execution_options(synchronize_session=False))
+
+    hold_account(db_session, record)
+    assert record.tier == "pro"

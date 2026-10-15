@@ -124,7 +124,7 @@ def hold_account(db: Session, user: User) -> None:
     once could both find room. Holding the account's row until the caller
     commits lets only one of them count at a time.
     """
-    db.query(User.id).filter(User.id == user.id).with_for_update().first()
+    db.query(User).filter(User.id == user.id).with_for_update().populate_existing().first()
 
 
 def refuse_if_at_limit(db: Session, user: User, resource: str) -> None:
