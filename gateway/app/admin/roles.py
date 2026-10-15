@@ -19,13 +19,49 @@ ROLES = (VIEWER, SUPPORT, SUPERADMIN)
 
 _VISIBLE = {
     VIEWER: {"User", "Workspace", "Membership"},
-    SUPPORT: {"User", "Workspace", "Membership", "APIKey", "WorkspaceInvite"},
-    SUPERADMIN: {"User", "Workspace", "Membership", "APIKey", "WorkspaceInvite", "AdminUser"},
+    SUPPORT: {
+        "User",
+        "Workspace",
+        "Membership",
+        "APIKey",
+        "WorkspaceInvite",
+        "AdminAction",
+    },
+    SUPERADMIN: {
+        "User",
+        "Workspace",
+        "Membership",
+        "APIKey",
+        "WorkspaceInvite",
+        "AdminUser",
+        "AdminAction",
+    },
+}
+
+
+_CHANGEABLE = {
+    VIEWER: set(),
+    SUPPORT: {"APIKey", "User"},
+    SUPERADMIN: {"APIKey", "User"},
+}
+
+_EDITABLE_FIELDS = {
+    SUPPORT: {"APIKey": {"is_active"}, "User": {"is_active"}},
+    SUPERADMIN: {"APIKey": {"is_active"}, "User": {"is_active", "tier"}},
 }
 
 
 def can_see(role, model_name):
     return model_name in _VISIBLE.get(role, set())
+
+
+def can_change(role, model_name):
+    return model_name in _CHANGEABLE.get(role, set())
+
+
+def editable_fields(role, model_name):
+    """The fields this role may set on this model, empty when it may not."""
+    return _EDITABLE_FIELDS.get(role, {}).get(model_name, set())
 
 
 def is_valid(role):

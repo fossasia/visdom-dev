@@ -39,7 +39,7 @@ The gateway's test suite runs against an in-memory SQLite database, so no Postgr
 
 ```bash
 cd gateway
-pip install -r requirements.txt
+pip install -r requirements.txt -c constraints.txt
 pytest tests/ -v
 ```
 

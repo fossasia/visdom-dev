@@ -378,3 +378,9 @@
   overflow-x: auto;
   white-space: pre;
 }
+
+.gc-password-form {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--vc-border);
+}
