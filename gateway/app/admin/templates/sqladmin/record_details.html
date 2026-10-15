@@ -1,0 +1,19 @@
+{% extends "sqladmin/details.html" %}
+
+{% block context_actions %}
+<span class="ap-context-name">
+  {{ model_view.name }} <strong>{{ record_label(model_view, model) }}</strong>
+</span>
+{% if model_view.check_can_edit(request, model) %}
+<a class="ap-chip is-primary" href="{{ model_view._build_url_for('admin:edit', request, model) }}">
+  <i class="fa fa-pen"></i><span>{{ _("Edit") }}</span>
+</a>
+{% endif %}
+{% if model_view.check_can_delete(request, model) %}
+<a class="ap-chip is-danger" href="#" data-name="{{ model_view.name }}"
+  data-pk="{{ get_object_identifier(model) }}" data-url="{{ model_view._url_for_delete(request, model) }}"
+  data-bs-toggle="modal" data-bs-target="#modal-delete">
+  <i class="fa fa-trash"></i><span>{{ _("Delete") }}</span>
+</a>
+{% endif %}
+{% endblock %}

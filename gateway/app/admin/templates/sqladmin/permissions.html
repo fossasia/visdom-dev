@@ -1,0 +1,79 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Permissions</h1>
+<div class="ap-page-subtitle">Let admins do some of what only a superadmin can.</div>
+{% endblock %}
+
+{% block content %}
+{% include 'sqladmin/cleanup_styles.html' %}
+<style>
+  .ap-perm-about {
+    display: block;
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+    font-weight: 400;
+  }
+
+  .ap-perm-save {
+    display: flex;
+    justify-content: flex-end;
+    padding: 14px 18px;
+    border-top: 1px solid var(--ap-hairline);
+  }
+
+  .ap-perm-table th,
+  .ap-perm-table td {
+    text-align: center;
+  }
+
+  .ap-perm-table th:first-child,
+  .ap-perm-table td:first-child {
+    text-align: left;
+  }
+</style>
+
+<div class="col-12">
+  <p class="ap-explain">
+    Tick a box under "Every admin" to give a permission to the whole admin group, or under one
+    name to give it to that admin only. A superadmin always has all of them, and support staff
+    cannot be given any. Changes apply on the person's next page and are written to the audit trail.
+  </p>
+
+  <form method="post" class="card">
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter ap-perm-table">
+        <thead>
+          <tr>
+            <th>Permission</th>
+            <th>Every admin</th>
+            {% for admin in admins %}
+            <th>{{ admin.email }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in grantable %}
+          <tr>
+            <td>{{ item.label }}<span class="ap-perm-about">{{ item.about }}</span></td>
+            <td><input class="form-check-input m-0" type="checkbox" name="group" value="{{ item.key }}"
+              aria-label="{{ item.label }}, every admin" {% if item.key in group %}checked{% endif %}></td>
+            {% for admin in admins %}
+            <td><input class="form-check-input m-0" type="checkbox" name="single" value="{{ item.key }}|{{ admin.id }}"
+              aria-label="{{ item.label }}, {{ admin.email }}"
+              {% if (item.key, admin.id) in single %}checked{% endif %}></td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="ap-perm-save">
+      <button type="submit" class="ap-act">Save permissions</button>
+    </div>
+  </form>
+  {% if not admins %}
+  <p class="ap-explain" style="margin-top: 12px">There is no active admin account yet, so only the group column is shown.</p>
+  {% endif %}
+</div>
+{% endblock %}
