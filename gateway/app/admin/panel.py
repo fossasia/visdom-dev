@@ -19,7 +19,7 @@ from urllib.parse import urlencode
 import wtforms
 from sqladmin import Admin, BaseView, ModelView, expose
 from sqladmin.authentication import AuthenticationBackend
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, object_session
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
@@ -523,17 +523,18 @@ def _other_active_admins(db, membership):
     at once would otherwise each see the other and both be allowed through,
     leaving a workspace nobody can administer.
     """
-    return (
+    admins = (
         db.query(Membership)
         .filter(
             Membership.workspace_id == membership.workspace_id,
             Membership.role == "admin",
             Membership.status == "active",
-            Membership.user_id != membership.user_id,
         )
+        .order_by(Membership.user_id)
         .with_for_update()
         .all()
     )
+    return [admin for admin in admins if admin.user_id != membership.user_id]
 
 
 class MembershipAdmin(ChangeableView, model=Membership):
@@ -592,23 +593,18 @@ class MembershipAdmin(ChangeableView, model=Membership):
         if new_role is None or new_role == model.role or model.role != "admin":
             return
 
-        db = SessionLocal()
-        try:
-            workspace = (
-                db.query(Workspace).filter(Workspace.id == model.workspace_id).first()
+        db = object_session(model)
+        workspace = db.query(Workspace).filter(Workspace.id == model.workspace_id).first()
+        if workspace is not None and workspace.created_by == model.user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="The workspace owner is always an admin.",
             )
-            if workspace is not None and workspace.created_by == model.user_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="The workspace owner is always an admin.",
-                )
-            if not _other_active_admins(db, model):
-                raise HTTPException(
-                    status_code=400,
-                    detail="This is the workspace's last admin.",
-                )
-        finally:
-            db.close()
+        if not _other_active_admins(db, model):
+            raise HTTPException(
+                status_code=400,
+                detail="This is the workspace's last admin.",
+            )
 
     async def on_model_delete(self, model, request: Request) -> None:
         """Refuse a removal that would leave a workspace with no admin.
@@ -619,15 +615,11 @@ class MembershipAdmin(ChangeableView, model=Membership):
         """
         if model.role != "admin" or model.status != "active":
             return
-        db = SessionLocal()
-        try:
-            if not _other_active_admins(db, model):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot remove the last admin of a workspace.",
-                )
-        finally:
-            db.close()
+        if not _other_active_admins(object_session(model), model):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last admin of a workspace.",
+            )
 
 
 class APIKeyAdmin(ChangeableView, model=APIKey):
@@ -683,16 +675,17 @@ def _other_active_superadmins(db, admin):
     two staff stopping the last two superadmins at once would each see the
     other and both be let through, leaving a console nobody can open.
     """
-    return (
+    superadmins = (
         db.query(AdminUser)
         .filter(
             AdminUser.role == roles.SUPERADMIN,
             AdminUser.is_active.is_(True),
-            AdminUser.id != admin.id,
         )
+        .order_by(AdminUser.id)
         .with_for_update()
         .all()
     )
+    return [other for other in superadmins if other.id != admin.id]
 
 
 
@@ -819,15 +812,11 @@ class AdminUserAdmin(RoleScopedView, model=AdminUser):
                 data.pop(key)
 
         if data.get("is_active") is False and model.role == roles.SUPERADMIN:
-            db = SessionLocal()
-            try:
-                if not _other_active_superadmins(db, model):
-                    raise HTTPException(
-                        status_code=400,
-                        detail="This is the last superadmin who can still sign in.",
-                    )
-            finally:
-                db.close()
+            if not _other_active_superadmins(object_session(model), model):
+                raise HTTPException(
+                    status_code=400,
+                    detail="This is the last superadmin who can still sign in.",
+                )
 
 
 class PermissionsView(BaseView):

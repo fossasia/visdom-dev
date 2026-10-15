@@ -149,3 +149,15 @@ def test_an_unknown_role_can_do_neither(workspace_with_members):
 
     assert not may_edit("stranger", plain)
     assert not may_remove("stranger", plain)
+
+
+def test_the_last_admin_check_locks_in_the_session_that_saves(monkeypatch, workspace_with_members):
+    from app.admin import panel
+
+    def second_session():
+        raise AssertionError("a lock taken in a second session is gone before the save")
+
+    monkeypatch.setattr(panel, "SessionLocal", second_session)
+
+    change_role(workspace_with_members["second"], "member")
+    remove(workspace_with_members["second"])
