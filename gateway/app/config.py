@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     VISDOM_SERVERS: str = ""
     ADMIN_ENVIRONMENT: str = ""
     VISDOM_ACTIVITY_TIMEOUT: float = 1.0
+    USAGE_SAMPLE_SECONDS: int = 60
     SUPPORT_CONTACT: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

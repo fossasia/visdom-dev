@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["USAGE_SAMPLE_SECONDS"] = "0"
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-0123456789abcdef")
 
 from app import security
