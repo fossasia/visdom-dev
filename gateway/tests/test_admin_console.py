@@ -144,6 +144,68 @@ def test_the_audit_trail_still_renders_once_the_row_is_gone(admin_client):
     assert "Suspended account long-gone@example.com (deleted)." in trail.text
 
 
+def test_the_audit_trail_names_a_whole_page_in_a_fixed_number_of_queries(admin_client):
+    from sqlalchemy import event
+
+    from app.models import AdminAction, APIKey, Membership
+
+    db = admin_client.staff_db
+    engine = db.get_bind()
+
+    def add_entries(count, start):
+        for index in range(start, start + count):
+            user = _account(db, email=f"named-{index}@example.com")
+            workspace = Workspace(id=uuid.uuid4(), name=f"Space {index}", slug=f"space-{index}")
+            key = APIKey(
+                id=uuid.uuid4(), name=f"key-{index}", prefix="vd_", hashed_key=f"hash-{index}", user_id=user.id
+            )
+            db.add_all([workspace, key])
+            db.flush()
+            db.add(Membership(user_id=user.id, workspace_id=workspace.id, role="member"))
+            for model, row_id in (
+                ("User", str(user.id)),
+                ("Workspace", str(workspace.id)),
+                ("APIKey", str(key.id)),
+                ("Membership", f"{user.id};{workspace.id}"),
+            ):
+                db.add(
+                    AdminAction(
+                        id=uuid.uuid4(),
+                        admin_email="staff@example.com",
+                        action="update",
+                        model=model,
+                        row_id=row_id,
+                        changes={"is_active": False},
+                    )
+                )
+        db.commit()
+
+    def render():
+        statements = []
+
+        def listener(*args):
+            statements.append(args[2])
+
+        event.listen(engine, "before_cursor_execute", listener)
+        try:
+            page = admin_client.get("/admin/admin-action/list")
+        finally:
+            event.remove(engine, "before_cursor_execute", listener)
+        assert page.status_code == 200
+        return page.text, len(statements)
+
+    add_entries(2, 0)
+    text, few = render()
+    for name in ("named-0@example.com", "space-1", "key-0 (named-0@example.com)", "named-1@example.com in space-1"):
+        assert name in text
+
+    add_entries(8, 2)
+    text, many = render()
+    assert "named-9@example.com in space-9" in text
+    assert "key-7 (named-7@example.com)" in text
+    assert many == few
+
+
 def test_an_edit_records_only_what_changed_and_reads_as_a_sentence(admin_client):
     from app.models import AdminAction
 

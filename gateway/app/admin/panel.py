@@ -966,17 +966,52 @@ _AUDIT_LABELS = {
 }
 
 
-def _audited_membership(db, row_id):
-    user_id, _, workspace_id = row_id.partition(";")
-    return (
-        db.query(Membership)
-        .options(joinedload(Membership.user), joinedload(Membership.workspace))
-        .filter(
-            Membership.user_id == uuid.UUID(user_id),
-            Membership.workspace_id == uuid.UUID(workspace_id),
-        )
-        .first()
-    )
+def _audit_kind(entry):
+    return "".join(ch for ch in str(entry.model).lower() if ch.isalnum())
+
+
+def _audit_key(entry):
+    kind = _audit_kind(entry)
+    try:
+        if kind == "membership":
+            user_id, _, workspace_id = entry.row_id.partition(";")
+            return kind, (uuid.UUID(user_id), uuid.UUID(workspace_id))
+        if kind in _AUDIT_LABELS:
+            return kind, uuid.UUID(entry.row_id)
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _audit_labels(db, entries):
+    wanted = {}
+    for entry in entries:
+        key = _audit_key(entry)
+        if key is not None:
+            wanted.setdefault(key[0], set()).add(key[1])
+    labels = {}
+    for kind, ids in wanted.items():
+        if kind == "membership":
+            rows = (
+                db.query(Membership)
+                .options(joinedload(Membership.user), joinedload(Membership.workspace))
+                .filter(
+                    Membership.user_id.in_({user_id for user_id, _ in ids}),
+                    Membership.workspace_id.in_({workspace_id for _, workspace_id in ids}),
+                )
+            )
+            for row in rows:
+                pair = (row.user_id, row.workspace_id)
+                if pair in ids:
+                    labels[(kind, pair)] = _RECORD_LABELS["Membership"](row)
+        else:
+            table, label = _AUDIT_LABELS[kind]
+            rows = db.query(table).filter(table.id.in_(ids))
+            if table is APIKey:
+                rows = rows.options(joinedload(APIKey.owner))
+            for row in rows:
+                labels[(kind, row.id)] = label(row)
+    return labels
 
 
 def _audit_subject(model, name):
@@ -987,29 +1022,22 @@ def _audit_subject(model, name):
     """
     if not model.row_id:
         return "unknown"
-    kind = "".join(ch for ch in str(model.model).lower() if ch.isalnum())
-    known = _AUDIT_LABELS.get(kind)
-    if known is None and kind != "membership":
+    kind = _audit_kind(model)
+    if kind not in _AUDIT_LABELS and kind != "membership":
         return model.row_id
-    db = SessionLocal()
-    try:
-        row = None
+    labels = getattr(model, "_audit_labels", None)
+    if labels is None:
+        db = SessionLocal()
         try:
-            if kind == "membership":
-                row = _audited_membership(db, model.row_id)
-                label = _RECORD_LABELS["Membership"]
-            else:
-                table, label = known
-                row = db.query(table).filter(table.id == uuid.UUID(model.row_id)).first()
-        except ValueError:
-            pass
-        if row is not None:
-            return label(row)
-    except Exception:
-        logging.exception("could not name the subject of an audit entry")
-        return model.row_id
-    finally:
-        db.close()
+            labels = _audit_labels(db, [model])
+        except Exception:
+            logging.exception("could not name the subject of an audit entry")
+            return model.row_id
+        finally:
+            db.close()
+    label = labels.get(_audit_key(model))
+    if label is not None:
+        return label
 
     named = (model.changes or {}).get("email")
     if named:
@@ -1081,6 +1109,21 @@ class AdminActionAdmin(RoleScopedView, model=AdminAction):
     column_sortable_list = [AdminAction.created_at, AdminAction.admin_email]
     column_default_sort = (AdminAction.created_at, True)
     column_searchable_list = [AdminAction.admin_email, AdminAction.model]
+
+    async def list(self, request: Request):
+        page = await super().list(request)
+        db = SessionLocal()
+        try:
+            labels = _audit_labels(db, page.rows)
+        except Exception:
+            logging.exception("could not name the subjects of the audit trail")
+            labels = None
+        finally:
+            db.close()
+        if labels is not None:
+            for row in page.rows:
+                row._audit_labels = labels
+        return page
 
 
 VIEWS = (
