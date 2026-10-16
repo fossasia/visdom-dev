@@ -15,6 +15,7 @@ from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models import APIKey, Membership, User, Workspace
 from app.schemas import APIKeyCreate, APIKeyCreatedResponse, APIKeyResponse
+from app.usage import refuse_if_at_limit
 
 router = APIRouter(prefix="/keys", tags=["keys"])
 
@@ -28,6 +29,8 @@ def create_api_key(
     Generates a secure API key, stores its prefix & SHA-256 hash in DB,
     and returns the raw key to the user (only displayed once).
     """
+    refuse_if_at_limit(db, current_user, "api_keys")
+
     workspaces: List[Workspace] = []
     if key_in.scope == "workspace":
         unique_ws_ids = list(dict.fromkeys(key_in.workspace_ids))

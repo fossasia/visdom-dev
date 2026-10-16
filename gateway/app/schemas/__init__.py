@@ -131,6 +131,8 @@ class PlanLimits(BaseModel):
     workspaces: Optional[int] = None
     members: Optional[int] = None
     api_keys: Optional[int] = None
+    storage_mb: Optional[int] = None
+    workspace_storage_mb: Optional[int] = None
 
 
 class PlanResponse(BaseModel):
@@ -160,4 +162,4 @@ class SubscriptionResponse(BaseModel):
 
 
 class SubscriptionUpdate(BaseModel):
-    tier: Literal["free", "pro", "enterprise"]
+    tier: str = Field(..., min_length=1, max_length=40)

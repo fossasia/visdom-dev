@@ -73,7 +73,18 @@ pip install -r requirements.txt -c constraints.txt
 pytest tests/ -v
 ```
 
-The frontend does not yet have an automated test suite; `npm run build` is used as a compile-correctness check.
+
+The frontend includes an automated test suite using Vitest and React Testing Library.
+
+To run the frontend tests:
+
+```bash
+cd frontend
+npm install
+npm test
+```
+
+Use `npm run build` to check that the frontend builds successfully.
 
 ## Benchmarks
 

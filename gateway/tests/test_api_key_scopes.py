@@ -120,7 +120,7 @@ def test_org_key_follows_membership(client, make_user, make_workspace, add_membe
 
 
 def test_expired_key_rejected(client, make_user):
-    user = make_user()
+    user = make_user(tier="enterprise")
 
     expired = client.post(
         KEYS, json={"name": "expired", "expires_at": "2020-01-01T00:00:00Z"}, headers=user["headers"]

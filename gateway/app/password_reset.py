@@ -73,7 +73,7 @@ def redeem(db, token: str, password: str, now: datetime.datetime | None = None) 
     reset = db.query(PasswordReset).filter(PasswordReset.token_hash == _digest(token)).first()
     if reset is None:
         return None
-    user = db.get(User, reset.user_id)
+    user = db.query(User).filter(User.id == reset.user_id).with_for_update().populate_existing().first()
     if user is None or not user.is_active:
         return None
     claimed = (

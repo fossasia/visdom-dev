@@ -8,7 +8,7 @@ import InviteMemberModal from './InviteMemberModal';
 import { cachedGet, invalidate } from '../../utils/requestCache';
 import { ROLE_BADGE, parseApiError } from '../../utils/helpers';
 
-const MembersTab = ({ workspaceId, currentUserId, isAdmin, ownerId }) => {
+const MembersTab = ({ workspaceId, currentUserId, isAdmin, ownerId, onOwnerChanged }) => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -66,6 +66,28 @@ fetchMembers();
       toast.success('Member removed.');
     } catch (err) {
       toast.error(parseApiError(err, 'Failed to remove member.'));
+    }
+  };
+
+  const handleMakeOwner = async (member) => {
+    const ok = await confirm({
+      title: 'Make owner',
+      message: `Hand this workspace to ${member.email}? They become an admin and the workspace counts against their plan. You stay on as an admin, and only they can hand it back.`,
+      confirmText: 'Make owner',
+      danger: true,
+    });
+    if (!ok) return;
+
+    try {
+      const response = await api.post(`/workspaces/${workspaceId}/owner`, { user_id: member.user_id });
+      invalidate(`/workspaces/${workspaceId}/members`);
+      setMembers((prev) =>
+        prev.map((m) => (m.user_id === member.user_id ? { ...m, role: 'admin' } : m))
+      );
+      onOwnerChanged?.(response.data);
+      toast.success(`${member.email} now owns this workspace.`);
+    } catch (err) {
+      toast.error(parseApiError(err, 'Failed to hand over the workspace.'));
     }
   };
 
@@ -210,6 +232,16 @@ fetchMembers();
 
                 {canManage && (
                   <div className="gc-flex-row-center">
+                    {currentUserId === ownerId && (
+                      <button
+                        className="gc-btn gc-btn-icon gc-btn-icon-compact"
+                        onClick={() => handleMakeOwner(m)}
+                        title="Make owner"
+                        type="button"
+                      >
+                        <Crown size={13} />
+                      </button>
+                    )}
                     <select
                       className="gc-select gc-select-compact"
                       value={m.role}

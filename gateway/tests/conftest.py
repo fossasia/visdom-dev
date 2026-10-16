@@ -33,8 +33,19 @@ _counter = itertools.count(1)
 
 @pytest.fixture(scope="function", autouse=True)
 def setup_database():
-    """Auto-creates tables before each test and drops them after."""
+    """Auto-creates tables before each test and drops them after.
+
+    The plans are seeded as the migration seeds them, since the schema here
+    comes from the models and not from the migrations.
+    """
+    from app.billing import seed_default_plans
+
     Base.metadata.create_all(bind=engine)
+    seeder = TestingSessionLocal()
+    try:
+        seed_default_plans(seeder)
+    finally:
+        seeder.close()
     yield
     Base.metadata.drop_all(bind=engine)
 
@@ -64,8 +75,8 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 @pytest.fixture
-def make_user(client):
-    def _make(email=None, password="securepassword", username=None):
+def make_user(client, db_session):
+    def _make(email=None, password="securepassword", username=None, tier=None):
         if email is None:
             email = f"user{next(_counter)}@example.com"
         payload = {"email": email, "password": password}
@@ -73,6 +84,13 @@ def make_user(client):
             payload["username"] = username
         registered = client.post("/api/v1/auth/register", json=payload)
         assert registered.status_code == 201, registered.text
+        if tier is not None:
+            from app.models import User
+
+            record = db_session.query(User).filter(User.email == email).first()
+            record.tier = tier
+            db_session.commit()
+
         logged_in = client.post(
             "/api/v1/auth/login", data={"username": email, "password": password}
         )
@@ -87,8 +105,20 @@ def make_user(client):
     return _make
 
 @pytest.fixture
-def make_workspace(client):
+def make_workspace(client, db_session):
+    """Create a workspace, lifting the owner's plan limit out of the way.
+
+    Scaffolding for tests that are not about billing should not be refused by
+    it. The tests that do exercise the limits create their users fresh on the
+    default free tier and post to the endpoint directly.
+    """
     def _make(user, name=None, slug=None):
+        from app.models import User
+
+        owner = db_session.query(User).filter(User.email == user["email"]).first()
+        if owner is not None and owner.tier != "enterprise":
+            owner.tier = "enterprise"
+            db_session.commit()
         n = next(_counter)
         response = client.post(
             "/api/v1/workspaces",

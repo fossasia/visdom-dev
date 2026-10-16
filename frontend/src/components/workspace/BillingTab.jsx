@@ -69,7 +69,7 @@ const BillingTab = () => {
   const usageItems = usage
     ? [
         { label: 'Workspaces', ...usage.workspaces },
-        { label: 'Team members', ...usage.members },
+        { label: 'Team seats', ...usage.members },
         { label: 'API keys', ...usage.api_keys },
       ]
     : [];
