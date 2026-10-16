@@ -1,4 +1,8 @@
 # Copyright 2017-present, The Visdom Authors
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from app import dependencies
 from app.config import settings
 from app.database import pool_options
 
@@ -21,3 +25,21 @@ def test_pool_stays_inside_postgres_connection_limit():
 def test_sqlite_gets_no_pool_settings():
     """Assert SQLite is left alone, since its pool rejects those arguments."""
     assert pool_options("sqlite://") == {}
+
+
+def test_postgres_request_session_uses_read_committed(monkeypatch):
+    """Membership reads after a row-lock wait need a fresh PostgreSQL snapshot."""
+    session = Mock()
+    session.get_bind.return_value = SimpleNamespace(
+        dialect=SimpleNamespace(name="postgresql")
+    )
+    monkeypatch.setattr(dependencies, "SessionLocal", lambda: session)
+
+    db_dependency = dependencies.get_db()
+    assert next(db_dependency) is session
+    session.connection.assert_called_once_with(
+        execution_options={"isolation_level": "READ COMMITTED"}
+    )
+
+    db_dependency.close()
+    session.close.assert_called_once()

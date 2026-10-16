@@ -1,4 +1,16 @@
 # Copyright 2017-present, The Visdom Authors
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database import Base
+from app.models import Membership, User, Workspace
+from app.routers.workspaces import remove_member, update_member_role
+from app.schemas.workspace import MemberRoleUpdate
+
 WORKSPACES = "/api/v1/workspaces"
 
 
@@ -239,6 +251,160 @@ def test_cannot_remove_last_admin(client, make_user, make_workspace, add_member)
     )
     assert blocked.status_code == 400
     assert blocked.json()["detail"] == "Cannot remove the last admin of a workspace."
+
+
+def test_concurrent_last_admin_leaves_preserve_admin(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'concurrent_admin_leaves.db'}",
+        connect_args={"timeout": 10},
+    )
+    Base.metadata.create_all(bind=engine)
+    ConcurrentSession = sessionmaker(bind=engine, expire_on_commit=False)
+    try:
+        with ConcurrentSession() as db:
+            first_admin = User(
+                email="first-admin@example.com",
+                username="first-admin",
+                password_hash="unused",
+            )
+            second_admin = User(
+                email="second-admin@example.com",
+                username="second-admin",
+                password_hash="unused",
+            )
+            db.add_all([first_admin, second_admin])
+            db.flush()
+            workspace = Workspace(
+                name="Concurrent leaves",
+                slug="concurrent-leaves",
+                created_by=first_admin.id,
+            )
+            db.add(workspace)
+            db.flush()
+            db.add_all(
+                [
+                    Membership(user_id=first_admin.id, workspace_id=workspace.id, role="admin"),
+                    Membership(user_id=second_admin.id, workspace_id=workspace.id, role="admin"),
+                ]
+            )
+            db.commit()
+            workspace_id = workspace.id
+            admin_ids = [first_admin.id, second_admin.id]
+
+        start_together = Barrier(2)
+
+        def leave_workspace(admin_id):
+            with ConcurrentSession() as db:
+                admin = db.get(User, admin_id)
+                start_together.wait(timeout=5)
+                try:
+                    remove_member(workspace_id, admin_id, admin, db)
+                except HTTPException as exc:
+                    return exc.status_code
+                return 204
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(leave_workspace, admin_ids))
+
+        assert sorted(results) == [204, 400]
+        with ConcurrentSession() as db:
+            active_admins = (
+                db.query(Membership)
+                .filter(
+                    Membership.workspace_id == workspace_id,
+                    Membership.role == "admin",
+                    Membership.status == "active",
+                )
+                .count()
+            )
+        assert active_admins == 1
+    finally:
+        engine.dispose()
+
+
+def test_concurrent_owner_leave_and_admin_demotion_preserve_admin(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'concurrent_admin_role_change.db'}",
+        connect_args={"timeout": 10},
+    )
+    Base.metadata.create_all(bind=engine)
+    ConcurrentSession = sessionmaker(bind=engine, expire_on_commit=False)
+    try:
+        with ConcurrentSession() as db:
+            owner = User(email="owner@example.com", username="owner", password_hash="unused")
+            second_admin = User(
+                email="second-admin@example.com",
+                username="second-admin",
+                password_hash="unused",
+            )
+            db.add_all([owner, second_admin])
+            db.flush()
+            workspace = Workspace(
+                name="Concurrent role change",
+                slug="concurrent-role-change",
+                created_by=owner.id,
+            )
+            db.add(workspace)
+            db.flush()
+            db.add_all(
+                [
+                    Membership(user_id=owner.id, workspace_id=workspace.id, role="admin"),
+                    Membership(user_id=second_admin.id, workspace_id=workspace.id, role="admin"),
+                ]
+            )
+            db.commit()
+            workspace_id = workspace.id
+            owner_id = owner.id
+            second_admin_id = second_admin.id
+
+        start_together = Barrier(2)
+
+        def leave_workspace():
+            with ConcurrentSession() as db:
+                requester = db.get(User, owner_id)
+                start_together.wait(timeout=5)
+                try:
+                    remove_member(workspace_id, owner_id, requester, db)
+                except HTTPException as exc:
+                    return exc.status_code
+                return 204
+
+        def demote_other_admin():
+            with ConcurrentSession() as db:
+                requester = db.get(User, owner_id)
+                start_together.wait(timeout=5)
+                try:
+                    update_member_role(
+                        workspace_id,
+                        second_admin_id,
+                        MemberRoleUpdate(role="member"),
+                        requester,
+                        db,
+                    )
+                except HTTPException as exc:
+                    return exc.status_code
+                return 200
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            leave_future = executor.submit(leave_workspace)
+            demotion_future = executor.submit(demote_other_admin)
+            leave_result = leave_future.result()
+            demotion_result = demotion_future.result()
+
+        assert (leave_result, demotion_result) in {(400, 200), (204, 404)}
+        with ConcurrentSession() as db:
+            active_admins = (
+                db.query(Membership)
+                .filter(
+                    Membership.workspace_id == workspace_id,
+                    Membership.role == "admin",
+                    Membership.status == "active",
+                )
+                .count()
+            )
+        assert active_admins == 1
+    finally:
+        engine.dispose()
 
 
 def test_unregistered_email_invite_lifecycle(client, make_user, make_workspace, add_member):

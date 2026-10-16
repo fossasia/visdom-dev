@@ -32,6 +32,11 @@ def get_db() -> Generator[Session, None, None]:
     """Provides a transactional database session and closes it when done."""
     db = SessionLocal()
     try:
+        if db.get_bind().dialect.name == "postgresql":
+            # Membership endpoints read the caller before locking the workspace.
+            # READ COMMITTED gives later statements a fresh snapshot after that lock
+            # is acquired, even when the server default is REPEATABLE READ.
+            db.connection(execution_options={"isolation_level": "READ COMMITTED"})
         yield db
     finally:
         db.close()

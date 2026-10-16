@@ -303,17 +303,35 @@ def update_member_role(
     no one can change their own role, and the workspace owner's role can only
     ever be set by no one at all (it's fixed once the workspace is created).
     """
-    _require_admin(db, workspace_id, current_user.id)
+    requester_id = current_user.id
+    _require_admin(db, workspace_id, requester_id)
 
-    if user_id == current_user.id:
+    if user_id == requester_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot change your own role.",
         )
 
-    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    # End the authentication snapshot before waiting for the workspace lock.
+    db.rollback()
+    workspace_query = db.query(Workspace).filter(Workspace.id == workspace_id)
+    if db.get_bind().dialect.name == "sqlite":
+        # SQLite ignores FOR UPDATE; serialize accepted membership changes with a
+        # no-op write after the caller has been authorized.
+        workspace = (
+            workspace_query.first()
+            if workspace_query.update({Workspace.id: Workspace.id}, synchronize_session=False)
+            else None
+        )
+    else:
+        workspace = workspace_query.with_for_update().first()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+
+    # Another membership change may have altered the caller while this request
+    # waited for the lock. Re-authorize against the current membership state.
+    _require_admin(db, workspace_id, requester_id)
+
     if workspace.created_by == user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -328,6 +346,23 @@ def update_member_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Approve this member's request before changing their role.",
         )
+
+    if membership.role == "admin" and role_update.role != "admin":
+        other_admins = (
+            db.query(Membership)
+            .filter(
+                Membership.workspace_id == workspace_id,
+                Membership.role == "admin",
+                Membership.status == "active",
+                Membership.user_id != user_id,
+            )
+            .count()
+        )
+        if not other_admins:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot demote the last admin of a workspace.",
+            )
 
     membership.role = role_update.role
     db.commit()
@@ -422,24 +457,48 @@ def remove_member(
     remove (leave) themselves. The workspace owner (its creator) can only be removed by
     themselves — no other admin can kick the owner out.
     """
-    is_self_leave = current_user.id == user_id
+    requester_id = current_user.id
+    is_self_leave = requester_id == user_id
     if is_self_leave:
-        requester_membership = _get_membership(db, workspace_id, current_user.id)
+        requester_membership = _get_membership(db, workspace_id, requester_id)
         if not requester_membership:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
     else:
-        requester_membership = _require_member(db, workspace_id, current_user.id)
+        requester_membership = _require_member(db, workspace_id, requester_id)
         if requester_membership.role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only workspace admins can remove other members.",
             )
 
-    workspace = (
-        db.query(Workspace).filter(Workspace.id == workspace_id).with_for_update().first()
-    )
+    # Authorization above must not take the workspace lock: SQLite implements the
+    # fallback below with a database-wide writer lock. Start a fresh transaction
+    # before waiting so the post-lock checks do not reuse the auth snapshot.
+    db.rollback()
+    workspace_query = db.query(Workspace).filter(Workspace.id == workspace_id)
+    if db.get_bind().dialect.name == "sqlite":
+        workspace = (
+            workspace_query.first()
+            if workspace_query.update({Workspace.id: Workspace.id}, synchronize_session=False)
+            else None
+        )
+    else:
+        workspace = workspace_query.with_for_update().first()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+
+    # Authorization may have changed while this request waited for the lock.
+    if is_self_leave:
+        if not _get_membership(db, workspace_id, requester_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+    else:
+        requester_membership = _require_member(db, workspace_id, requester_id)
+        if requester_membership.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only workspace admins can remove other members.",
+            )
+
     if workspace.created_by == user_id and not is_self_leave:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
