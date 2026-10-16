@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
+from app import billing
 from app.admin import activity, janitor, permissions, roles, wording
 from app.admin.audit import StaffAuditBackend, remember
 from app.config import settings
@@ -34,6 +35,7 @@ from app.models import (
     APIKey,
     APIKeyWorkspace,
     Membership,
+    Plan,
     SharedLink,
     User,
     Workspace,
@@ -192,6 +194,28 @@ def _to_the_minute(field, empty=""):
     return render
 
 
+def _tier_choices():
+    """Every plan, marked when it is hidden or archived.
+
+    Archived plans are offered so an account already on one still shows its
+    plan; moving an account onto one is refused when the form is saved.
+    """
+    db = SessionLocal()
+    try:
+        plans = db.query(Plan).order_by(Plan.sort_order, Plan.id).all()
+    finally:
+        db.close()
+
+    def label(plan):
+        if plan.archived_at is not None:
+            return f"{plan.name} (archived)"
+        if not plan.is_public:
+            return f"{plan.name} (hidden)"
+        return plan.name
+
+    return [(plan.id, label(plan)) for plan in plans]
+
+
 class UserAdmin(ChangeableView, model=User):
     name = "User"
     name_plural = "Users"
@@ -220,8 +244,10 @@ class UserAdmin(ChangeableView, model=User):
         User.last_login_at: _to_the_minute("last_login_at", "never"),
     }
     form_columns = [User.is_active, User.tier, User.password_hash]
-    form_overrides = {"password_hash": wtforms.PasswordField}
+    form_include_pk = True
+    form_overrides = {"tier": wtforms.SelectField, "password_hash": wtforms.PasswordField}
     form_args = {
+        "tier": {"label": "Plan", "choices": lambda: _tier_choices()},
         "password_hash": {
             "label": "Set a new password",
             "description": (
@@ -269,6 +295,19 @@ class UserAdmin(ChangeableView, model=User):
         if chosen:
             data["password_hash"] = get_password_hash(chosen)
             model.token_version = (model.token_version or 0) + 1
+        tier = data.get("tier")
+        if tier is None or tier == model.tier:
+            return
+        db = SessionLocal()
+        try:
+            allowed = billing.assignable(db, tier)
+        finally:
+            db.close()
+        if not allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{tier} is archived or does not exist, so no account can be put on it.",
+            )
 
 
 def _email_of(user):

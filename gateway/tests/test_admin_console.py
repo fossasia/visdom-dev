@@ -791,3 +791,55 @@ def test_a_membership_role_must_be_one_the_product_knows(admin_client):
 
     trail = admin_client.get("/admin/admin-action/list").text
     assert "Changed typo@example.com in typo-lab to viewer." in trail
+
+
+def test_the_plan_dropdown_marks_hidden_and_archived_plans(admin_client):
+    import datetime
+
+    from app.models import Plan, User
+
+    db = admin_client.staff_db
+    db.add(Plan(id="internal", name="Internal", is_public=False, limits={}, features=[]))
+    db.add(
+        Plan(
+            id="legacy",
+            name="Legacy",
+            archived_at=datetime.datetime.now(datetime.timezone.utc),
+            limits={},
+            features=[],
+        )
+    )
+    user = User(id=uuid.uuid4(), email="picker@example.com", username="picker", password_hash="x")
+    db.add(user)
+    db.commit()
+
+    page = admin_client.get(f"/admin/user/edit/{user.id}").text
+    assert "Internal (hidden)" in page
+    assert "Legacy (archived)" in page
+
+
+def test_an_account_cannot_be_moved_onto_an_archived_plan(admin_client):
+    import datetime
+
+    from app.models import Plan, User
+
+    db = admin_client.staff_db
+    db.add(
+        Plan(
+            id="legacy",
+            name="Legacy",
+            archived_at=datetime.datetime.now(datetime.timezone.utc),
+            limits={},
+            features=[],
+        )
+    )
+    user = User(id=uuid.uuid4(), email="mover@example.com", username="mover", password_hash="x", tier="free")
+    db.add(user)
+    db.commit()
+
+    response = admin_client.post(
+        f"/admin/user/edit/{user.id}", data={"is_active": "y", "tier": "legacy"}, follow_redirects=False
+    )
+    db.expire_all()
+    assert response.status_code == 400
+    assert db.get(User, user.id).tier == "free"
