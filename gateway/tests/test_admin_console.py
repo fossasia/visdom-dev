@@ -346,6 +346,26 @@ def test_a_superadmin_can_set_a_password_for_a_locked_out_account(admin_client):
     assert changed.token_version == before + 1
 
 
+def test_the_password_is_kept_exactly_as_typed(admin_client):
+    from app.models import User
+    from app.security import verify_password
+
+    db = admin_client.staff_db
+    user = _account(db)
+    padded = "abc" + " " * 9
+
+    admin_client.post(
+        f"/admin/user/edit/{user.id}",
+        data=_user_form(user, password_hash=padded),
+        follow_redirects=False,
+    )
+
+    db.expire_all()
+    changed = db.get(User, user.id)
+    assert verify_password(padded, changed.password_hash)
+    assert not verify_password("abc", changed.password_hash)
+
+
 def test_an_ordinary_save_leaves_the_password_alone(admin_client):
     """The field is optional, so suspending an account must not demand one."""
     from app.models import User

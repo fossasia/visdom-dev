@@ -288,7 +288,8 @@ class UserAdmin(ChangeableView, model=User):
         hashed here, the only place the plaintext exists, and bumps
         ``token_version`` so the sessions the old password opened are closed.
         """
-        chosen = (data.get("password_hash") or "").strip()
+        submitted = data.get("password_hash") or ""
+        chosen = submitted if submitted.strip() else ""
         if not chosen:
             data.pop("password_hash", None)
         await super().on_model_change(data, model, is_created, request)
