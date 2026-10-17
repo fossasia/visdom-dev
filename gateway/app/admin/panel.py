@@ -653,12 +653,17 @@ class MembershipAdmin(ChangeableView, model=Membership):
         that could do what the product refuses would be a way around the rule
         rather than a way to administer it.
         """
-        if model.role != "admin" or model.status != "active":
-            return
-        if not _other_active_admins(object_session(model), model):
+        db = object_session(model)
+        if model.role == "admin" and model.status == "active" and not _other_active_admins(db, model):
             raise HTTPException(
                 status_code=400,
                 detail="Cannot remove the last admin of a workspace.",
+            )
+        workspace = db.query(Workspace).filter(Workspace.id == model.workspace_id).first()
+        if workspace is not None and workspace.created_by == model.user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="The workspace owner cannot be removed.",
             )
 
 

@@ -87,6 +87,14 @@ def test_an_admin_can_be_removed_while_another_remains(workspace_with_members):
     remove(workspace_with_members["second"])
 
 
+def test_the_owner_cannot_be_removed_even_with_another_admin(workspace_with_members):
+    with pytest.raises(HTTPException) as refused:
+        remove(workspace_with_members["owner"])
+
+    assert refused.value.status_code == 403
+    assert "owner" in refused.value.detail
+
+
 def test_the_last_admin_cannot_be_removed(db_session, workspace_with_members):
     """The same rule the API applies when a member removes another."""
     db_session.delete(workspace_with_members["second"])
