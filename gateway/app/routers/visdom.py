@@ -36,7 +36,23 @@ def _lookup_workspace(db: Session, workspace_slug: str) -> Workspace:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found."
         )
+    _refuse_if_suspended(workspace)
     return workspace
+
+
+def _refuse_if_suspended(workspace: Workspace) -> None:
+    """Stop a suspended workspace being read from or written to.
+
+    Both paths into visdom resolve through here, so this is the one place that
+    has to say no. visdom caches a resolve for its own interval, so this takes
+    effect once that expires rather than at once, and a socket already open
+    never resolves again.
+    """
+    if not workspace.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This workspace has been suspended. Contact an administrator.",
+        )
 
 
 def _active_membership_role(db: Session, workspace_id, user_id) -> str:

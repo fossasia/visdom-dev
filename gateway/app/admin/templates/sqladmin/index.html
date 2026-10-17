@@ -1,28 +1,153 @@
 {% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Overview</h1>
+<div class="ap-page-subtitle">Everything this deployment is holding right now.</div>
+{% endblock %}
+
 {% block content %}
-<div class="col-12 d-block">
-  <h2 class="mb-3">Overview</h2>
-  <div class="row row-cards mb-4">
+<style>
+  .ap-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .ap-stat {
+    display: block;
+    background: var(--ap-surface);
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius);
+    box-shadow: var(--ap-shadow);
+    padding: 22px 24px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .2s var(--ap-ease), box-shadow .2s var(--ap-ease);
+  }
+
+  .ap-stat:hover {
+    text-decoration: none;
+    color: inherit;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(16, 24, 40, .05), 0 12px 28px rgba(16, 24, 40, .08);
+  }
+
+  .ap-stat-value {
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -.022em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ap-stat-label {
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--ap-ink-soft);
+    white-space: nowrap;
+  }
+
+  .ap-section-title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -.017em;
+    margin: 0 0 14px;
+  }
+
+  .ap-attention {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .ap-flag {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    background: var(--ap-surface);
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius);
+    box-shadow: var(--ap-shadow);
+    padding: 18px 20px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .2s var(--ap-ease);
+  }
+
+  .ap-flag:hover {
+    text-decoration: none;
+    color: inherit;
+    transform: translateY(-2px);
+  }
+
+  .ap-flag-count {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    color: #b4690e;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ap-flag-label {
+    font-size: 14px;
+    color: var(--ap-ink);
+    line-height: 1.35;
+  }
+
+  .ap-all-clear {
+    background: var(--ap-surface);
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius);
+    box-shadow: var(--ap-shadow);
+    padding: 18px 20px;
+    font-size: 14px;
+    color: var(--ap-ink-soft);
+    margin-bottom: 32px;
+  }
+</style>
+
+<div class="col-12">
+  <div class="ap-stats">
     {% for card in overview_cards(request) %}
-    <div class="col-6 col-sm-4 col-lg-2">
-      <div class="card">
-        <div class="card-body p-3 text-center">
-          <div class="h1 m-0">{{ card.count }}</div>
-          <div class="text-secondary mb-2">{{ card.label }}</div>
-          {% if card.url %}<a href="{{ card.url }}" class="small">view</a>{% endif %}
-        </div>
-      </div>
-    </div>
+    <a class="ap-stat" href="{{ card.url }}">
+      <div class="ap-stat-value">{{ card.count }}</div>
+      <div class="ap-stat-label">{{ card.label }}</div>
+    </a>
     {% endfor %}
   </div>
 
+  {% set flagged = overview_attention(request) %}
+  {% if flagged is not none %}
+  <h2 class="ap-section-title">Needs attention</h2>
+  {% if flagged %}
+  <div class="ap-attention">
+    {% for section in flagged %}
+    <a class="ap-flag" href="{{ janitor_url(request) }}">
+      <span class="ap-flag-count">{{ section.rows | length }}</span>
+      <span class="ap-flag-label">{{ section.title }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="ap-all-clear">Nothing needs cleaning up.</div>
+  {% endif %}
+  {% endif %}
+
   {% set recent = overview_recent(request) %}
   {% if recent %}
+  <h2 class="ap-section-title">Newest accounts</h2>
   <div class="card">
-    <div class="card-header"><h3 class="card-title">Newest accounts</h3></div>
     <div class="table-responsive">
-      <table class="table card-table table-vcenter">
-        <thead><tr><th>Email</th><th>Plan</th><th>Joined</th></tr></thead>
+      <table class="table card-table table-vcenter mb-0">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Plan</th>
+            <th>Joined</th>
+          </tr>
+        </thead>
         <tbody>
           {% for u in recent %}
           <tr>

@@ -1,0 +1,81 @@
+<style>
+  .ap-crumb {
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+    margin-bottom: 6px;
+  }
+
+  .ap-crumb a {
+    color: var(--ap-blue);
+    text-decoration: none;
+  }
+
+  .ap-explain {
+    font-size: 14px;
+    color: var(--ap-ink-soft);
+    margin-bottom: 16px;
+    max-width: 760px;
+  }
+
+  .ap-warn {
+    background: #fff7e6;
+    color: #8a5a00;
+    border-radius: var(--ap-radius-sm);
+    padding: 12px 16px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+
+  .ap-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--ap-hairline);
+  }
+
+  .ap-bulk-label {
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+    margin-right: 4px;
+  }
+
+  .ap-act {
+    border: 1px solid var(--ap-hairline);
+    background: var(--ap-surface);
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ap-ink);
+    cursor: pointer;
+  }
+
+  .ap-act:hover:not(:disabled) {
+    border-color: var(--ap-blue);
+    color: var(--ap-blue);
+  }
+
+  .ap-act.is-danger {
+    color: #b42318;
+    border-color: #f1c5c0;
+  }
+
+  .ap-act.is-danger:hover:not(:disabled) {
+    background: #fdecea;
+    color: #b42318;
+    border-color: #e8a19a;
+  }
+
+  .ap-act:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
+  .ap-row-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+</style>
