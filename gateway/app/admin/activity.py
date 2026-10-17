@@ -26,6 +26,7 @@ import urllib.error
 import urllib.request
 
 from app.config import settings
+from app.internal_signing import signed_headers
 
 _SERVER_PATTERN = re.compile(r"server\s+([^\s;]+)")
 
@@ -56,11 +57,22 @@ def _read_within(response, deadline: float) -> bytes:
             raise ValueError("answer too large")
 
 
+ACTIVITY_PATH = "/vis/_activity"
+
+
+def internal_url(address: str, path: str) -> str:
+    host = address.rsplit(":", 1)[0]
+    return f"http://{host}:{settings.VISDOM_INTERNAL_PORT}{path}"
+
+
 def _ask(address: str, timeout: float) -> tuple[bool, list[dict]]:
-    url = f"http://{address}/vis/_activity"
+    request = urllib.request.Request(
+        internal_url(address, ACTIVITY_PATH),
+        headers=signed_headers(settings.VISDOM_INTERNAL_READ_KEY, "GET", ACTIVITY_PATH),
+    )
     deadline = time.monotonic() + timeout
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.loads(_read_within(response, deadline) or b"{}")
     except (urllib.error.URLError, OSError, ValueError) as exc:
         logging.warning("could not read activity from %s: %s", address, exc)
