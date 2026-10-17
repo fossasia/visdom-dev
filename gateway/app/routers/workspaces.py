@@ -17,9 +17,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.billing import at_limit, limit_for
+from app.billing import at_limit, limit_for ,DEFAULT_TIER, get_plan
 from app.config import settings
-from app.dependencies import commit_or_conflict, get_current_user, get_db
+from app.dependencies import (
+    commit_or_conflict,
+    get_current_user,
+    get_db,
+    lock_user_for_workspace_quota,
+)
 from app.email import build_share_link_url, send_workspace_invite_email
 from app.models import Membership, SharedLink, User, Workspace, WorkspaceInvite, utcnow
 from app.schemas.workspace import (
@@ -139,15 +144,44 @@ def create_workspace(
     db: Session = Depends(get_db),
 ):
     """Creates a workspace and grants the creator an admin membership."""
+    owner = lock_user_for_workspace_quota(db, current_user.id)
+    if owner is None:
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        )
+    if not owner.is_active:
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+
     existing = db.query(Workspace).filter(Workspace.slug == workspace_in.slug).first()
     if existing:
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A workspace with this slug already exists.",
         )
 
-    refuse_if_at_limit(db, current_user, "workspaces")
-    workspace = Workspace(name=workspace_in.name, slug=workspace_in.slug, created_by=current_user.id)
+    plan = get_plan(db, owner.tier or DEFAULT_TIER)
+    workspace_limit = plan["limits"]["workspaces"]
+    if workspace_limit is not None:
+        workspaces_used = (
+            db.query(Workspace.id)
+            .filter(Workspace.created_by == owner.id)
+            .count()
+        )
+        if workspaces_used >= workspace_limit:
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Workspace limit reached for the {plan['name']} plan "
+                    f"({workspace_limit} maximum)."
+                ),
+            )
+
+    workspace = Workspace(name=workspace_in.name, slug=workspace_in.slug, created_by=owner.id)
     db.add(workspace)
     try:
         db.flush()  # populate workspace.id before creating the membership row
@@ -158,7 +192,7 @@ def create_workspace(
             detail="A workspace with this slug already exists.",
         ) from None
 
-    membership = Membership(user_id=current_user.id, workspace_id=workspace.id, role="admin")
+    membership = Membership(user_id=owner.id, workspace_id=workspace.id, role="admin")
     db.add(membership)
     commit_or_conflict(db, "A workspace with this slug already exists.")
     db.refresh(workspace)

@@ -122,6 +122,14 @@ const BillingTab = () => {
                   >
                     Contact Sales
                   </a>
+                ) : plan.id !== 'free' ? (
+                  <button
+                    className="gc-btn gc-w-full gc-mt-1"
+                    type="button"
+                    disabled
+                  >
+                    Paid upgrade unavailable
+                  </button>
                 ) : (
                   <button
                     className="gc-btn gc-btn-primary gc-w-full gc-mt-1"
@@ -138,7 +146,7 @@ const BillingTab = () => {
         </div>
 
         <div className="gc-text-desc-muted gc-mt-sm">
-          Payment processing isn't wired up yet — switching a plan updates your tier immediately for now.
+          Paid plan access requires a verified subscription. Contact sales for Enterprise access.
         </div>
       </section>
 

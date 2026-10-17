@@ -74,6 +74,45 @@ def client(db_session):
         yield test_client
     app.dependency_overrides.clear()
 
+
+@pytest.fixture
+def file_database_client(tmp_path):
+    """Runs requests with independent sessions against a file-backed SQLite DB."""
+    database_path = tmp_path / "concurrent.sqlite3"
+    file_engine = create_engine(
+        f"sqlite:///{database_path.as_posix()}",
+        connect_args={"check_same_thread": False, "timeout": 15},
+    )
+    Base.metadata.create_all(bind=file_engine)
+    file_sessions = sessionmaker(autocommit=False, autoflush=False, bind=file_engine)
+    from app.billing import seed_default_plans
+    seed_session = file_sessions()
+    try:
+        seed_default_plans(seed_session)
+    finally:
+        seed_session.close()
+
+    def override_get_db():
+        db = file_sessions()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    previous_override = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as test_client:
+            yield test_client, file_sessions
+    finally:
+        if previous_override is None:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = previous_override
+        Base.metadata.drop_all(bind=file_engine)
+        file_engine.dispose()
+
+
 @pytest.fixture
 def make_user(client, db_session):
     def _make(email=None, password="securepassword", username=None, tier=None):

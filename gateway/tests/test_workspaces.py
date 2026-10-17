@@ -1,5 +1,10 @@
 # Copyright 2017-present, The Visdom Authors
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+from app.models import User
+from app.routers import workspaces as workspaces_router
 
 WORKSPACES = "/api/v1/workspaces"
 
@@ -28,6 +33,77 @@ def test_create_workspace(client, make_user):
             "status": "active",
         }
     ]
+
+
+def test_create_workspace_rejects_when_plan_limit_reached(client, make_user, make_workspace):
+    user = make_user()
+    existing_workspace = make_workspace(user)
+
+    response = client.post(
+        WORKSPACES,
+        json={"name": "Second workspace", "slug": "second-workspace"},
+        headers=user["headers"],
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Workspace limit reached for the Free plan (1 maximum)."
+    workspaces = client.get(WORKSPACES, headers=user["headers"]).json()
+    assert [workspace["id"] for workspace in workspaces] == [existing_workspace["id"]]
+
+
+def test_concurrent_workspace_creations_cannot_exceed_plan_limit(
+    file_database_client, monkeypatch
+):
+    client, file_sessions = file_database_client
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={"email": "quota-race@example.com", "password": "securepassword"},
+    )
+    assert registered.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        data={"username": "quota-race@example.com", "password": "securepassword"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    db = file_sessions()
+    account = db.query(User).filter(User.email == "quota-race@example.com").one()
+    account.tier = "pro"
+    db.commit()
+    db.close()
+
+    for number in range(9):
+        created = client.post(
+            WORKSPACES,
+            json={"name": f"Existing {number}", "slug": f"existing-{number}"},
+            headers=headers,
+        )
+        assert created.status_code == 201
+
+    request_barrier = Barrier(2)
+    original_lock = workspaces_router.lock_user_for_workspace_quota
+
+    def synchronize_requests(db, user_id):
+        request_barrier.wait(timeout=10)
+        return original_lock(db, user_id)
+
+    monkeypatch.setattr(workspaces_router, "lock_user_for_workspace_quota", synchronize_requests)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = [
+            executor.submit(
+                client.post,
+                WORKSPACES,
+                json={"name": f"Concurrent {number}", "slug": f"concurrent-{number}"},
+                headers=headers,
+            )
+            for number in range(2)
+        ]
+        results = [response.result(timeout=15) for response in responses]
+
+    assert sorted(result.status_code for result in results) == [201, 403]
+    workspaces = client.get(WORKSPACES, headers=headers).json()
+    assert len(workspaces) == 10
 
 
 def test_create_workspace_duplicate_slug(client, make_user):

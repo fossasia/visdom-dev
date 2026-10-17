@@ -1,16 +1,16 @@
 """
 Billing router: subscription plans, the current user's subscription with real
-usage against plan limits, and (payment-free) plan changes.
+usage against plan limits, and downgrades from paid tiers.
 """
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException,status
 from sqlalchemy.orm import Session
 
 from app.billing import DEFAULT_TIER, get_plan, ordered_plans, selectable
-from app.dependencies import get_current_user, get_db
-from app.models import User
+from app.dependencies import get_current_user, get_db, lock_user_for_workspace_quota
+from app.models import APIKey, Membership, User, Workspace
 from app.schemas import PlanResponse, SubscriptionResponse, SubscriptionUpdate
 from app.usage import usage
 
@@ -59,17 +59,26 @@ def update_subscription(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Changes the current user's plan. No payment processing yet.
-
-    Only a public, current plan can be picked here. An account cannot move
-    itself onto a hidden or archived plan, since changing plan costs nothing yet.
-    """
-    if not selectable(db, payload.tier):
+    """Allows downgrades; paid tiers require a verified subscription entitlement."""
+    user = lock_user_for_workspace_quota(db, current_user.id)
+    if user is None:
+        db.commit()
         raise HTTPException(
-            status_code=422,
-            detail="That plan is not available.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
         )
-    current_user.tier = payload.tier
+    if not user.is_active:
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+
+    if payload.tier != DEFAULT_TIER and payload.tier != user.tier:
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Paid plan changes require a verified subscription.",
+        )
+
+    user.tier = payload.tier
     db.commit()
-    db.refresh(current_user)
-    return _build_subscription(db, current_user)
+    db.refresh(user)
+    return _build_subscription(db, user)

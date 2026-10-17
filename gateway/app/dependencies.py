@@ -37,6 +37,30 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def lock_user_for_workspace_quota(db: Session, user_id: uuid.UUID) -> User | None:
+    """Starts a fresh transaction and locks a user's workspace quota state.
+
+    Authentication already queried the user, so finish that read-only transaction
+    before locking. PostgreSQL uses READ COMMITTED so a count after waiting for the row
+    lock sees the transaction that just released it. SQLite ignores FOR UPDATE;
+    a no-op update obtains its database writer lock before the quota is counted.
+    """
+    db.commit()
+    dialect = db.get_bind().dialect.name
+
+    if dialect == "postgresql":
+        db.connection(execution_options={"isolation_level": "READ COMMITTED"})
+    elif dialect == "sqlite":
+        db.query(User).filter(User.id == user_id).update(
+            {User.token_version: User.token_version}, synchronize_session=False
+        )
+
+    query = db.query(User).filter(User.id == user_id).populate_existing()
+    if dialect != "sqlite":
+        query = query.with_for_update()
+    return query.first()
+
+
 def commit_or_conflict(
     db: Session,
     detail: str,
