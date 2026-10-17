@@ -27,8 +27,25 @@ x-visdom: &visdom
     VISDOM_GATEWAY_URL: http://gateway:${GATEWAY_PORT}
     VISDOM_PROXY_URL: http://proxy:${NGINX_PORT}
     VISDOM_OWNERSHIP_INTERVAL: ${VISDOM_OWNERSHIP_INTERVAL:-30}
+    VISDOM_INTERNAL_READ_KEYS: ${VISDOM_INTERNAL_READ_KEY},${VISDOM_INTERNAL_READ_KEY_PREVIOUS:-}
+  entrypoint: ["python", "-m", "visdom.server"]
+  command:
+    - -port
+    - ${VISDOM_PORT}
+    - -base_url
+    - ${VISDOM_BASE_URL}
+    - -env_path
+    - ${VISDOM_ENV_PATH}
+    - -internal_port
+    - ${VISDOM_INTERNAL_PORT}
+    - -internal_ssl_certfile
+    - /internal-tls/internal.crt
+    - -internal_ssl_keyfile
+    - /internal-tls/internal.key
   volumes:
     - visdom_data:${VISDOM_ENV_PATH}
+    - ./deploy/internal-tls/internal.crt:/internal-tls/internal.crt:ro
+    - ./deploy/internal-tls/internal.key:/internal-tls/internal.key:ro
   depends_on:
     - gateway
 
@@ -75,7 +92,12 @@ services:
       ADMIN_SECRET: ${ADMIN_SECRET:-}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
       VISDOM_SERVERS: ${VISDOM_SERVERS}
+      VISDOM_INTERNAL_PORT: ${VISDOM_INTERNAL_PORT}
+      VISDOM_INTERNAL_READ_KEY: ${VISDOM_INTERNAL_READ_KEY}
+      VISDOM_INTERNAL_CA: /internal-tls/internal-ca.pem
       ADMIN_ENVIRONMENT: ${ADMIN_ENVIRONMENT:-}
+    volumes:
+      - ./deploy/internal-tls/internal-ca.pem:/internal-tls/internal-ca.pem:ro
     depends_on:
       db:
         condition: service_healthy

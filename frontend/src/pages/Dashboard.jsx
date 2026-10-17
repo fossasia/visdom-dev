@@ -1,13 +1,14 @@
 /* Copyright 2017-present, The Visdom Authors */
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth, api } from '../context/AuthContext';
-import { Building2, CreditCard, Key, LineChart, Link2, LogOut, User, Users } from 'lucide-react';
+import { Building2, CreditCard, Gauge, Key, LineChart, Link2, LogOut, User, Users } from 'lucide-react';
 import WorkspaceSwitcher from '../components/workspace/WorkspaceSwitcher';
 import WorkspaceSettingsTab from '../components/workspace/WorkspaceSettingsTab';
 import MembersTab from '../components/workspace/MembersTab';
 import SharedLinksTab from '../components/workspace/SharedLinksTab';
 import KeysTab from '../components/workspace/KeysTab';
 import BillingTab from '../components/workspace/BillingTab';
+import UsageTab from '../components/workspace/UsageTab';
 import PendingInvitesBanner from '../components/workspace/PendingInvitesBanner';
 import ProfileModal from '../components/ProfileModal';
 import { readScoped, writeScoped } from '../utils/storage';
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'members', label: 'Members', icon: Users },
   { id: 'keys', label: 'Keys & API', icon: Key },
   { id: 'shared', label: 'Shared Links', icon: Link2 },
+  { id: 'usage', label: 'Usage', icon: Gauge },
   { id: 'billing', label: 'Billing', icon: CreditCard },
 ];
 
@@ -228,6 +230,7 @@ fetchWorkspaces();
               <SharedLinksTab workspaceId={activeWorkspace.id} isAdmin={isAdmin} />
             )}
 
+            {activeTab === 'usage' && <UsageTab />}
             {activeTab === 'billing' && <BillingTab />}
           </>
         )}
