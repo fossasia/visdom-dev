@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     VISDOM_ACTIVITY_TIMEOUT: float = 1.0
     VISDOM_INTERNAL_PORT: int = 8098
     VISDOM_INTERNAL_READ_KEY: str = ""
+    VISDOM_INTERNAL_CA: str = ""
     USAGE_SAMPLE_SECONDS: int = 60
     SUPPORT_CONTACT: str = ""
     SMTP_HOST: str = ""

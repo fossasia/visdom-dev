@@ -28,3 +28,6 @@ Thumbs.db
 bench/results/
 bench/.env*
 bench/__pycache__/
+
+# Internal TLS certificate and key, made on each box by deploy/internal-cert.sh
+deploy/internal-tls/

@@ -31,7 +31,7 @@ def test_the_headers_carry_the_time_and_the_signature():
 def test_activity_is_asked_on_the_internal_port_with_a_signature(monkeypatch):
     sent = []
 
-    def urlopen(request, timeout):
+    def urlopen(request, timeout, context=None):
         sent.append(request)
         return io.BytesIO(json.dumps({"workspaces": []}).encode())
 
@@ -43,6 +43,6 @@ def test_activity_is_asked_on_the_internal_port_with_a_signature(monkeypatch):
     assert activity._ask("visdom-1:8097", 1.0) == (True, [])
 
     request = sent[0]
-    assert request.full_url == "http://visdom-1:8098/vis/_activity"
+    assert request.full_url == "https://visdom-1:8098/vis/_activity"
     assert request.get_header("X-visdom-timestamp") == "1800000000"
     assert request.get_header("X-visdom-signature") == ACTIVITY_SIGNATURE

@@ -10,7 +10,7 @@ from app.admin import activity
 
 
 def _answering(monkeypatch, payload):
-    def urlopen(url, timeout):
+    def urlopen(url, timeout, context=None):
         return io.BytesIO(json.dumps(payload).encode())
 
     monkeypatch.setattr(activity.urllib.request, "urlopen", urlopen)
@@ -70,7 +70,7 @@ def test_an_instance_that_keeps_trickling_is_cut_off(monkeypatch):
             time.sleep(0.05)
             return b" "
 
-    monkeypatch.setattr(activity.urllib.request, "urlopen", lambda url, timeout: Trickle())
+    monkeypatch.setattr(activity.urllib.request, "urlopen", lambda url, timeout, context=None: Trickle())
     started = time.monotonic()
     assert activity._ask("visdom-1:8097", 0.2) == (False, [])
     assert time.monotonic() - started < 0.5

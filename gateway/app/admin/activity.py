@@ -20,6 +20,8 @@ import concurrent.futures
 import json
 import logging
 import re
+import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -62,7 +64,26 @@ ACTIVITY_PATH = "/vis/_activity"
 
 def internal_url(address: str, path: str) -> str:
     host = address.rsplit(":", 1)[0]
-    return f"http://{host}:{settings.VISDOM_INTERNAL_PORT}{path}"
+    return f"https://{host}:{settings.VISDOM_INTERNAL_PORT}{path}"
+
+
+def internal_tls() -> ssl.SSLContext:
+    context = ssl.create_default_context(cafile=settings.VISDOM_INTERNAL_CA or None)
+    if settings.VISDOM_INTERNAL_CA:
+        context.check_hostname = False
+    return context
+
+
+def certificate_days_left(address: str, timeout: float) -> float | None:
+    host = address.rsplit(":", 1)[0]
+    try:
+        with socket.create_connection((host, settings.VISDOM_INTERNAL_PORT), timeout=timeout) as raw:
+            with internal_tls().wrap_socket(raw, server_hostname=host) as tls:
+                not_after = tls.getpeercert()["notAfter"]
+    except (OSError, KeyError, ValueError) as exc:
+        logging.warning("could not read the internal certificate of %s: %s", address, exc)
+        return None
+    return (ssl.cert_time_to_seconds(not_after) - time.time()) / 86400
 
 
 def _ask(address: str, timeout: float) -> tuple[bool, list[dict]]:
@@ -72,7 +93,7 @@ def _ask(address: str, timeout: float) -> tuple[bool, list[dict]]:
     )
     deadline = time.monotonic() + timeout
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=internal_tls()) as response:
             payload = json.loads(_read_within(response, deadline) or b"{}")
     except (urllib.error.URLError, OSError, ValueError) as exc:
         logging.warning("could not read activity from %s: %s", address, exc)

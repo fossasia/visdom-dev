@@ -34,12 +34,38 @@ def test_every_instance_answering_is_healthy(client, monkeypatch):
     monkeypatch.setattr(
         health, "activity_per_instance", lambda timeout: [("visdom-1:8097", True, []), ("visdom-2:8097", True, [])]
     )
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: 400.5)
     answered = client.get(f"{HEALTH}/components")
     assert answered.status_code == 200
     assert answered.json() == {
         "status": "healthy",
-        "checks": {"database": "ok", "visdom": "2 of 2 answering", "metering": "off"},
+        "checks": {
+            "database": "ok",
+            "visdom": "2 of 2 answering",
+            "internal_certificate": "400 days left",
+            "metering": "off",
+        },
     }
+
+
+def test_an_internal_certificate_near_its_end_is_degraded(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097", "visdom-2:8097"])
+    monkeypatch.setattr(
+        health, "activity_per_instance", lambda timeout: [("visdom-1:8097", True, []), ("visdom-2:8097", True, [])]
+    )
+    days = {"visdom-1:8097": 400.0, "visdom-2:8097": 12.0}
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: days[address])
+    answered = client.get(f"{HEALTH}/components")
+    assert answered.status_code == 503
+    assert answered.json()["checks"]["internal_certificate"] == "12 days left"
+
+
+def test_an_unreadable_internal_certificate_is_reported_as_unknown(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097"])
+    monkeypatch.setattr(health, "activity_per_instance", lambda timeout: [("visdom-1:8097", False, [])])
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: None)
+    answered = client.get(f"{HEALTH}/components")
+    assert answered.json()["checks"]["internal_certificate"] == "unknown"
 
 
 def test_one_instance_down_is_degraded(client, monkeypatch):
@@ -48,6 +74,7 @@ def test_one_instance_down_is_degraded(client, monkeypatch):
     monkeypatch.setattr(
         health, "activity_per_instance", lambda timeout: [("visdom-1:8097", True, []), ("visdom-2:8097", False, [])]
     )
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: None)
     answered = client.get(f"{HEALTH}/components")
     assert answered.status_code == 503
     assert answered.json()["status"] == "degraded"
