@@ -56,7 +56,7 @@ def _read_within(response, deadline: float) -> bytes:
             raise ValueError("answer too large")
 
 
-def _ask(address: str, timeout: float) -> list[dict]:
+def _ask(address: str, timeout: float) -> tuple[bool, list[dict]]:
     url = f"http://{address}/vis/_activity"
     deadline = time.monotonic() + timeout
     try:
@@ -64,21 +64,21 @@ def _ask(address: str, timeout: float) -> list[dict]:
             payload = json.loads(_read_within(response, deadline) or b"{}")
     except (urllib.error.URLError, OSError, ValueError) as exc:
         logging.warning("could not read activity from %s: %s", address, exc)
-        return []
+        return False, []
     rows = payload.get("workspaces") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         logging.warning("activity from %s was not in the expected shape", address)
-        return []
-    return [row for row in rows if isinstance(row, dict)]
+        return False, []
+    return True, [row for row in rows if isinstance(row, dict)]
 
 
 _CACHE_TTL = 2.0
-_cache: dict = {"at": 0.0, "value": {}}
+_cache: dict = {"at": 0.0, "value": {"answered": False, "workspaces": {}}}
 _cache_lock = threading.Lock()
 
 
-def cached_activity() -> dict[str, dict]:
-    """`activity_by_workspace` behind a short cache.
+def cached_snapshot() -> dict:
+    """`activity_snapshot` behind a short cache.
 
     One list page renders many rows and each wants the same answer, so without
     this a fifty row page would fan out fifty times. The window is short enough
@@ -87,10 +87,15 @@ def cached_activity() -> dict[str, dict]:
     with _cache_lock:
         if time.monotonic() - _cache["at"] < _CACHE_TTL:
             return _cache["value"]
-        value = activity_by_workspace()
+        value = activity_snapshot()
         _cache["at"] = time.monotonic()
         _cache["value"] = value
         return value
+
+
+def cached_activity() -> dict[str, dict]:
+    """Just the per-workspace part of the cached snapshot."""
+    return cached_snapshot()["workspaces"]
 
 
 async def refresh_activity() -> None:
@@ -100,7 +105,7 @@ async def refresh_activity() -> None:
 
 def known_activity() -> dict[str, dict]:
     """The last answer fetched, without asking the instances again."""
-    return _cache["value"]
+    return _cache["value"]["workspaces"]
 
 
 def _is_count(value) -> bool:
@@ -119,6 +124,27 @@ def _usable(entry: dict) -> bool:
     return all(entry.get(key) is None or _is_number(entry[key]) for key in ("last_active_at", "bytes"))
 
 
+def _union_active_minutes(current: dict, entry: dict) -> None:
+    """Combine two instances' active-minute masks for the same workspace.
+
+    A union rather than a sum: three instances that each served a write in the
+    same minute did one minute of work between them. Masks belong to an hour, so
+    only answers about the same hour combine, and a later hour replaces an
+    earlier one outright rather than folding two hours into one number.
+    """
+    mine_hour, theirs_hour = current.get("active_hour"), entry.get("active_hour")
+    if theirs_hour is None:
+        return
+    if mine_hour is None or theirs_hour > mine_hour:
+        current["active_hour"] = theirs_hour
+        current["active_minutes_mask"] = entry.get("active_minutes_mask") or 0
+        return
+    if theirs_hour == mine_hour:
+        current["active_minutes_mask"] = (current.get("active_minutes_mask") or 0) | (
+            entry.get("active_minutes_mask") or 0
+        )
+
+
 def _combine(merged: dict[str, dict], workspace_id: str, entry: dict) -> None:
     """Fold one instance's answer for a workspace into the running total.
 
@@ -128,17 +154,27 @@ def _combine(merged: dict[str, dict], workspace_id: str, entry: dict) -> None:
     zeroes reported by the instances that merely see the files.
 
     Counts add up, since a workspace is served by one instance and the others
-    contribute nothing. Everything else takes the most informative answer: the
-    latest write, the largest size, and a slug from whichever instance has
-    actually bound the workspace and knows it.
+    contribute nothing. That holds for the running totals as well as the live
+    counts: a workspace moves between instances when one restarts, and the work
+    each did is a share of the same total rather than a rival answer to it.
+    Everything else takes the most informative answer: the latest write, the
+    largest size, and a slug from whichever instance has actually bound the
+    workspace and knows it.
+
+    A counter absent from every instance stays absent, so a deployment running a
+    visdom that predates them reports nothing rather than a fabricated zero.
     """
     current = merged.get(workspace_id)
     if current is None:
         merged[workspace_id] = dict(entry)
         return
 
-    current["viewers"] = current.get("viewers", 0) + entry.get("viewers", 0)
-    current["writers"] = current.get("writers", 0) + entry.get("writers", 0)
+    for key in ("viewers", "writers", "writes", "broadcasts", "broadcast_bytes"):
+        mine, theirs = current.get(key), entry.get(key)
+        if mine is None and theirs is None:
+            continue
+        current[key] = (mine or 0) + (theirs or 0)
+    _union_active_minutes(current, entry)
     current["slug"] = current.get("slug") or entry.get("slug")
     for key in ("last_active_at", "bytes"):
         mine, theirs = current.get(key), entry.get(key)
@@ -146,22 +182,51 @@ def _combine(merged: dict[str, dict], workspace_id: str, entry: dict) -> None:
             current[key] = theirs
 
 
-def activity_by_workspace(timeout: float | None = None) -> dict[str, dict]:
-    """Live viewer/writer counts keyed by workspace id, across all instances.
+def activity_snapshot(timeout: float | None = None) -> dict:
+    """What the instances collectively know, and whether any of them answered.
 
     An instance that does not answer is skipped rather than failing the whole
     call, so one sick instance costs its workspaces' counts instead of the page.
+    `answered` is true once any instance has replied, which is what lets a
+    caller read a missing workspace as one nobody has written to. Every instance
+    shares the env volume, so any one of them reports every workspace that has a
+    directory, and a workspace missing from an answer really has none.
     """
     addresses = instance_addresses()
     if not addresses:
-        return {}
+        return {"answered": False, "workspaces": {}}
     if timeout is None:
         timeout = settings.VISDOM_ACTIVITY_TIMEOUT
 
+    answered = False
     merged: dict[str, dict] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
-        for entries in pool.map(lambda a: _ask(a, timeout), addresses):
+        for ok, entries in pool.map(lambda a: _ask(a, timeout), addresses):
+            answered = answered or ok
             for entry in entries:
-                if _usable(entry):
-                    _combine(merged, entry["workspace_id"], entry)
-    return merged
+                workspace_id = entry.get("workspace_id")
+                if workspace_id and _usable(entry):
+                    _combine(merged, workspace_id, entry)
+    return {"answered": answered, "workspaces": merged}
+
+
+def activity_per_instance(timeout: float | None = None) -> list[tuple]:
+    """Each instance's own answer, unmerged, as (address, answered, entries).
+
+    The merged snapshot sums counters across instances, which is right for a
+    page showing what is happening and wrong for working out what is new: a
+    restart is only visible in the one instance that had it.
+    """
+    addresses = instance_addresses()
+    if not addresses:
+        return []
+    if timeout is None:
+        timeout = settings.VISDOM_ACTIVITY_TIMEOUT
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
+        answers = list(pool.map(lambda a: _ask(a, timeout), addresses))
+    return [(address, ok, entries) for address, (ok, entries) in zip(addresses, answers, strict=True)]
+
+
+def activity_by_workspace(timeout: float | None = None) -> dict[str, dict]:
+    """Live viewer/writer counts keyed by workspace id, across all instances."""
+    return activity_snapshot(timeout)["workspaces"]

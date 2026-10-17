@@ -14,10 +14,11 @@ number someone is shown and the number they are held to are the same one.
 import datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.billing import at_limit, limit_for
-from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, utcnow
+from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, WorkspaceUsageHour, utcnow
 
 
 def owned_workspace_ids(db: Session, user: User, include_trashed: bool = False) -> list:
@@ -182,5 +183,99 @@ def refuse_if_full(db: Session, owner: User) -> None:
         detail=(
             "This workspace has no room for another member on its owner's plan. "
             "Ask one of its admins."
+        ),
+    )
+
+
+def latest_storage(db: Session, workspace_ids) -> dict:
+    """Bytes on disk per workspace, as of the most recent hour recorded.
+
+    Storage is a level rather than a total, so this is the latest reading and
+    never a sum over the month.
+    """
+    if not workspace_ids:
+        return {}
+    newest = (
+        db.query(
+            WorkspaceUsageHour.workspace_id,
+            func.max(WorkspaceUsageHour.hour_start).label("hour_start"),
+        )
+        .filter(WorkspaceUsageHour.workspace_id.in_(workspace_ids))
+        .group_by(WorkspaceUsageHour.workspace_id)
+        .subquery()
+    )
+    rows = (
+        db.query(WorkspaceUsageHour.workspace_id, WorkspaceUsageHour.peak_bytes)
+        .join(
+            newest,
+            and_(
+                WorkspaceUsageHour.workspace_id == newest.c.workspace_id,
+                WorkspaceUsageHour.hour_start == newest.c.hour_start,
+            ),
+        )
+        .all()
+    )
+    return {workspace_id: int(size or 0) for workspace_id, size in rows}
+
+
+MEGABYTE = 1024 * 1024
+
+
+def storage_used(db: Session, user: User) -> int:
+    """Bytes on disk across every workspace the account owns, as last sampled.
+
+    Workspaces in the trash count too. Their files stay on disk until they are
+    purged, so leaving them out let an account trash a full workspace and fill
+    another.
+    """
+    return sum(latest_storage(db, owned_workspace_ids(db, user, include_trashed=True)).values())
+
+
+def workspace_storage_limit(db: Session, workspace: Workspace) -> int | None:
+    """Bytes one workspace may hold under its owner's plan, or None for no cap."""
+    owner = workspace.creator
+    if owner is None:
+        return None
+    limit_mb = limit_for(db, owner.tier, "workspace_storage_mb")
+    return None if limit_mb is None else limit_mb * MEGABYTE
+
+
+def refuse_writes_over_storage(db: Session, workspace: Workspace) -> None:
+    """Stop new plots once the workspace, or its owner's plan, is out of storage.
+
+    Two ceilings: what any one workspace may hold, and what all of the owner's
+    workspaces may hold together. The first is what stops one busy workspace
+    taking the whole allowance, or the whole disk on a plan with no total.
+
+    The owner's plan is the one that pays, so a member writing into someone
+    else's workspace is held to the owner's limit, not their own. Only writes
+    are refused: reading and deleting still work, which is how an account gets
+    back under the limit.
+    """
+    owner = workspace.creator
+    if owner is None:
+        return
+    ceiling = workspace_storage_limit(db, workspace)
+    if ceiling is not None and latest_storage(db, [workspace.id]).get(workspace.id, 0) >= ceiling:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"This workspace has used all {ceiling // MEGABYTE:,} MB of storage one "
+                f"workspace may hold on the {owner.tier} plan, so new plots are refused. "
+                "Viewing still works; deleting old environments frees space."
+            ),
+        )
+    limit_mb = limit_for(db, owner.tier, "storage_mb")
+    if limit_mb is None:
+        return
+    used = storage_used(db, owner)
+    if used < limit_mb * MEGABYTE:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail=(
+            f"This workspace's owner has used all {limit_mb:,} MB of storage on the "
+            f"{owner.tier} plan, so new plots are refused. Viewing still works; "
+            "deleting old environments frees space."
         ),
     )
