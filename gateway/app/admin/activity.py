@@ -141,6 +141,9 @@ def known_activity() -> dict[str, dict]:
     return _cache["value"]["workspaces"]
 
 
+_OPTIONAL_COUNTS = ("writes", "broadcasts", "broadcast_bytes", "active_hour", "active_minutes_mask")
+
+
 def _is_count(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -153,6 +156,8 @@ def _usable(entry: dict) -> bool:
     if not isinstance(entry.get("workspace_id"), str) or not entry["workspace_id"]:
         return False
     if not all(_is_count(entry.get(key, 0)) for key in ("viewers", "writers")):
+        return False
+    if not all(entry.get(key) is None or _is_count(entry[key]) for key in _OPTIONAL_COUNTS):
         return False
     return all(entry.get(key) is None or _is_number(entry[key]) for key in ("last_active_at", "bytes"))
 

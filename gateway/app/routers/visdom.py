@@ -16,6 +16,7 @@ from app.dependencies import (
     get_db,
 )
 from app.models import APIKey, Membership, User, Workspace
+from app.usage import refuse_writes_over_storage
 
 router = APIRouter(prefix="/visdom", tags=["visdom"])
 
@@ -71,6 +72,7 @@ def resolve_workspace(
     workspace = _lookup_workspace(db, payload.workspace_slug)
     enforce_api_key_workspace_scope(db, key_record, workspace.id)
     role = _active_membership_role(db, workspace.id, key_record.user_id)
+    refuse_writes_over_storage(db, workspace)
     return VisdomResolveResponse(
         workspace_id=str(workspace.id), role=role, allowed=True
     )
