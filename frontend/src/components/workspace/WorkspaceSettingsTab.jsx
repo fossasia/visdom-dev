@@ -102,7 +102,7 @@ const WorkspaceSettingsTab = ({ workspace, isAdmin, currentUserId, retention, on
             Danger Zone
           </div>
           <p className="gc-panel-sub">
-            Deleting a workspace permanently removes all memberships and shared links associated with it.
+            Deleting a workspace permanently removes its plots, memberships and shared links.
           </p>
           <button className="gc-btn gc-btn-danger" onClick={() => setShowDeleteModal(true)} type="button">
             <Trash2 size={13} />

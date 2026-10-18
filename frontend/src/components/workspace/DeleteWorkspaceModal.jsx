@@ -46,8 +46,8 @@ const DeleteWorkspaceModal = ({ workspace, onClose, onDeleted }) => {
         <AlertTriangle size={16} className="gc-warning-icon" />
         <p className="gc-warning-text">
           This action <strong>cannot be undone</strong>. This will permanently delete the{' '}
-          <strong>{workspace.name}</strong> workspace, along with all of its memberships, API access, and shared
-          links.
+          <strong>{workspace.name}</strong> workspace, along with all of its plots, memberships, API access, and
+          shared links.
         </p>
       </div>
 
