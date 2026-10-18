@@ -90,6 +90,9 @@ def test_rows_with_bad_fields_are_skipped_and_good_rows_kept(monkeypatch):
         {"workspace_id": "", "viewers": 1},
         {"workspace_id": "vision", "writers": True},
         {"workspace_id": "vision", "bytes": "lots"},
+        {"workspace_id": "vision", "writes": "many"},
+        {"workspace_id": "vision", "active_hour": "now", "active_minutes_mask": 1},
+        {"workspace_id": "vision", "active_hour": 5, "active_minutes_mask": [1]},
         {"workspace_id": "audio", "writers": 1, "bytes": 512, "last_active_at": None},
     ]
     monkeypatch.setattr(activity, "instance_addresses", lambda: ["visdom-1:8097"])

@@ -228,3 +228,48 @@ def test_a_tick_that_reaches_nobody_records_nothing(db_session):
 
     assert usage_rollup.sample_once(db_session, unreachable) == 0
     assert db_session.query(UsageBaseline).count() == 0
+
+
+def test_a_row_with_unreadable_numbers_is_skipped_and_the_rest_still_count(
+    client, make_user, make_workspace, db_session
+):
+    good = make_workspace(make_user())["id"]
+    bad = make_workspace(make_user())["id"]
+    _tick(db_session, (A, True, [_entry(good, writes=1), _entry(bad, writes=1)]))
+    _tick(
+        db_session,
+        (
+            A,
+            True,
+            [
+                _entry(good, writes=6),
+                {**_entry(bad), "writes": "lots"},
+                {**_entry(bad), "bytes": -5},
+                {**_entry(bad), "broadcasts": float("inf")},
+                {**_entry(bad), "active_hour": 10**12, "active_minutes_mask": 1},
+                {**_entry(bad), "active_hour": 5, "active_minutes_mask": 1 << 61},
+                {"workspace_id": ["not", "a", "string"]},
+                "not a row",
+            ],
+        ),
+    )
+
+    rows = _rows(db_session)
+    assert [(str(row.workspace_id), row.writes) for row in rows] == [(good, 5)]
+    baseline = db_session.get(UsageBaseline, {"instance": A, "workspace_id": bad})
+    assert baseline.writes == 1
+
+
+def test_a_reading_keeps_good_numbers_as_numbers():
+    checked = usage_rollup.reading(
+        {"workspace_id": "w", "writes": "7", "bytes": None, "active_hour": 3}
+    )
+    assert checked == {
+        "workspace_id": "w",
+        "writes": 7,
+        "broadcasts": 0,
+        "broadcast_bytes": 0,
+        "bytes": 0,
+        "active_hour": 3,
+        "active_minutes_mask": 0,
+    }

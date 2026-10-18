@@ -42,6 +42,9 @@ from app.models import UsageBaseline, Workspace, WorkspaceUsageHour, utcnow
 
 _COUNTERS = ("writes", "broadcasts", "broadcast_bytes")
 _TICK_LOCK = 7234091
+_LARGEST = 2**63 - 1
+_LAST_HOUR = 253402300799 // 3600
+_FULL_MASK = (1 << 60) - 1
 
 
 def hour_start(moment: datetime.datetime | None = None) -> datetime.datetime:
@@ -80,9 +83,40 @@ def take_tick(db: Session) -> bool:
     return bool(granted)
 
 
+def _number(value, default=0, largest=_LARGEST):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ValueError("a flag is not a count")
+    number = int(value)
+    if not 0 <= number <= largest:
+        raise ValueError(f"{number} is out of range")
+    return number
+
+
+def reading(entry) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    workspace_id = entry.get("workspace_id")
+    if not isinstance(workspace_id, str) or not workspace_id:
+        return None
+    try:
+        checked = {name: _number(entry.get(name)) for name in _COUNTERS}
+        checked["bytes"] = _number(entry.get("bytes"))
+        checked["active_hour"] = _number(entry.get("active_hour"), None, _LAST_HOUR)
+        checked["active_minutes_mask"] = _number(
+            entry.get("active_minutes_mask"), 0, _FULL_MASK
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        logging.warning("skipping activity for %s: %s", workspace_id, exc)
+        return None
+    checked["workspace_id"] = workspace_id
+    return checked
+
+
 def _advance(db: Session, instance: str, workspace_id: str, entry: dict) -> dict:
     """Move one instance's baseline for one workspace on, returning what is new."""
-    current = {name: int(entry.get(name) or 0) for name in _COUNTERS}
+    current = {name: entry[name] for name in _COUNTERS}
     baseline = db.get(UsageBaseline, {"instance": instance, "workspace_id": workspace_id})
     if baseline is None:
         db.add(UsageBaseline(instance=instance, workspace_id=workspace_id, **current))
@@ -102,10 +136,11 @@ def gather(db: Session, answers) -> dict:
     for instance, answered, entries in answers:
         if not answered:
             continue
-        for entry in entries:
-            workspace_id = entry.get("workspace_id")
-            if not workspace_id:
+        for raw in entries:
+            entry = reading(raw)
+            if entry is None:
                 continue
+            workspace_id = entry["workspace_id"]
             new = _advance(db, instance, workspace_id, entry)
             slot = totals.setdefault(
                 workspace_id,
@@ -113,11 +148,11 @@ def gather(db: Session, answers) -> dict:
             )
             for name in _COUNTERS:
                 slot[name] += new[name]
-            slot["peak_bytes"] = max(slot["peak_bytes"], int(entry.get("bytes") or 0))
-            hour = entry.get("active_hour")
+            slot["peak_bytes"] = max(slot["peak_bytes"], entry["bytes"])
+            hour = entry["active_hour"]
             if hour is None:
                 continue
-            mask = int(entry.get("active_minutes_mask") or 0)
+            mask = entry["active_minutes_mask"]
             if slot["hour"] is None or hour > slot["hour"]:
                 slot["hour"], slot["mask"] = hour, mask
             elif hour == slot["hour"]:
