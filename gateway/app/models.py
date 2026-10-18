@@ -238,7 +238,8 @@ class WorkspaceUsageHour(Base):
     Counters and gauges are stored side by side but do not combine the same
     way. Writes and broadcasts accumulate, so a month is their sum. Stored bytes
     is a level rather than a total, so the hour keeps the highest reading and a
-    month is the largest of those, never the sum.
+    month is the largest of those, never the sum. The latest reading is kept as
+    well, because a limit has to see space freed within the hour.
     """
 
     __tablename__ = "workspace_usage_hours"
@@ -254,6 +255,8 @@ class WorkspaceUsageHour(Base):
     broadcasts = Column(BigInteger, nullable=False, default=0, server_default="0")
     broadcast_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
     peak_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    current_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    minutes_mask = Column(BigInteger, nullable=False, default=0, server_default="0")
 
     __table_args__ = (
         Index("ix_workspace_usage_hours_hour_start", "hour_start"),

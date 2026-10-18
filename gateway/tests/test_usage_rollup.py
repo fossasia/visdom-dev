@@ -189,6 +189,30 @@ def test_the_hour_keeps_its_highest_minute_count(
     assert _rows(db_session)[0].active_minutes == 3
 
 
+def test_minutes_from_before_a_restart_are_kept(
+    client, make_user, make_workspace, db_session
+):
+    ws = make_workspace(make_user())["id"]
+    hour = _epoch_hour(2026, 5, 4, 10)
+    when = datetime.datetime(2026, 5, 4, 10, 30, tzinfo=UTC)
+    _tick(db_session, (A, True, [_entry(ws, hour=hour, mask=0b111)]), when=when)
+    _tick(db_session, (A, True, [_entry(ws, hour=hour, mask=0b11000)]), when=when)
+
+    assert _rows(db_session)[0].active_minutes == 5
+
+
+def test_minutes_from_an_instance_that_stopped_answering_are_kept(
+    client, make_user, make_workspace, db_session
+):
+    ws = make_workspace(make_user())["id"]
+    hour = _epoch_hour(2026, 5, 4, 10)
+    when = datetime.datetime(2026, 5, 4, 10, 30, tzinfo=UTC)
+    _tick(db_session, (A, True, [_entry(ws, hour=hour, mask=0b1111)]), when=when)
+    _tick(db_session, (B, True, [_entry(ws, hour=hour, mask=0b110000)]), when=when)
+
+    assert _rows(db_session)[0].active_minutes == 6
+
+
 def test_stored_bytes_is_the_largest_reading_not_a_sum(
     client, make_user, make_workspace, db_session
 ):
@@ -197,6 +221,18 @@ def test_stored_bytes_is_the_largest_reading_not_a_sum(
     _tick(db_session, (A, True, [_entry(ws, stored=800)]))
 
     assert _rows(db_session)[0].peak_bytes == 900
+
+
+def test_storage_reads_the_latest_reading_within_the_hour(
+    client, make_user, make_workspace, db_session
+):
+    ws = make_workspace(make_user())["id"]
+    _tick(db_session, (A, True, [_entry(ws, stored=900)]))
+    _tick(db_session, (A, True, [_entry(ws, stored=100)]))
+
+    row = _rows(db_session)[0]
+    assert row.peak_bytes == 900
+    assert latest_storage(db_session, [row.workspace_id]) == {row.workspace_id: 100}
 
 
 def test_different_hours_are_different_rows(client, make_user, make_workspace, db_session):

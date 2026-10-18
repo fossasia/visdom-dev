@@ -35,6 +35,7 @@ def _stored(db, workspace, size):
             broadcasts=0,
             broadcast_bytes=0,
             peak_bytes=size,
+            current_bytes=size,
         )
     )
     db.commit()
@@ -77,6 +78,23 @@ def test_writes_are_refused_at_the_limit_and_say_why(client, make_user, make_wor
     assert refused.status_code == 402
     assert "storage" in refused.json()["detail"]
     assert "deleting old environments" in refused.json()["detail"]
+
+
+def test_space_freed_within_the_hour_lets_writes_through(
+    client, make_user, make_workspace, db_session
+):
+    owner = make_user()
+    ws = make_workspace(owner)
+    key = _write_key(client, owner, ws)
+    _on_plan(db_session, owner, "free")
+    _stored(db_session, ws, FREE_LIMIT)
+    assert _write(client, key, ws).status_code == 402
+
+    row = db_session.query(WorkspaceUsageHour).one()
+    row.current_bytes = FREE_LIMIT // 2
+    db_session.commit()
+
+    assert _write(client, key, ws).status_code == 200
 
 
 def test_viewing_still_works_over_the_limit(client, make_user, make_workspace, db_session):

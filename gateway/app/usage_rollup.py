@@ -27,7 +27,8 @@ the totals used are always at least as new as the baseline they are compared to.
 
 Active minutes are not differenced. Each instance reports which minutes of an
 hour had work in them as a mask, masks from different instances are unioned, and
-the count lands on the hour the mask belongs to, keeping the highest seen.
+the masks are unioned into the one stored on the hour they belong to, so minutes
+seen before an instance restarted or a workspace moved are kept.
 """
 
 import datetime
@@ -191,6 +192,8 @@ def _row(db: Session, rows: dict, workspace_id, bucket) -> WorkspaceUsageHour:
             broadcasts=0,
             broadcast_bytes=0,
             peak_bytes=0,
+            current_bytes=0,
+            minutes_mask=0,
         )
         db.add(row)
     rows[key] = row
@@ -223,9 +226,13 @@ def record(db: Session, totals: dict, when: datetime.datetime | None = None) -> 
             for name in _COUNTERS:
                 setattr(row, name, (getattr(row, name) or 0) + slot[name])
             row.peak_bytes = max(row.peak_bytes or 0, slot["peak_bytes"])
+            row.current_bytes = slot["peak_bytes"]
         if minutes:
             row = _row(db, rows, as_uuid, hour_of(slot["hour"]))
-            row.active_minutes = max(row.active_minutes or 0, minutes)
+            row.minutes_mask = (row.minutes_mask or 0) | slot["mask"]
+            row.active_minutes = max(
+                row.active_minutes or 0, active_minutes_from(row.minutes_mask)
+            )
         folded += 1
     return folded
 

@@ -77,7 +77,9 @@ const UsageTab = () => {
         <div className="gc-panel-header">
           <span className="gc-panel-title">By workspace</span>
         </div>
-        {rows.length === 0 ? (
+        {!usage ? (
+          <div className="gc-empty">Usage is unavailable right now.</div>
+        ) : rows.length === 0 ? (
           <div className="gc-empty">You don&apos;t own any workspaces yet.</div>
         ) : (
           rows.map((row) => (
