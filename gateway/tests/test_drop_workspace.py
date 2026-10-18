@@ -7,8 +7,8 @@ import pytest
 
 from app import account_deletion
 from app.admin import activity
-from app.routers import workspaces as workspace_routes
 from app.models import User, Workspace, utcnow
+from app.routers import workspaces as workspace_routes
 
 
 @pytest.fixture

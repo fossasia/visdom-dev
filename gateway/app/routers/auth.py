@@ -13,8 +13,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app import email as outbound
 from app import account_deletion, password_reset
+from app import email as outbound
 from app.admin.activity import evict_workspace
 from app.config import settings
 from app.dependencies import (
