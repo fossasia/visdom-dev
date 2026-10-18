@@ -68,6 +68,16 @@ def test_an_unreadable_internal_certificate_is_reported_as_unknown(client, monke
     assert answered.json()["checks"]["internal_certificate"] == "unknown"
 
 
+def test_a_missing_internal_key_is_named_and_degraded(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097"])
+    monkeypatch.setattr(health, "activity_per_instance", lambda timeout: [("visdom-1:8097", False, [])])
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: None)
+    monkeypatch.setattr(health.settings, "VISDOM_INTERNAL_READ_KEY", "")
+    answered = client.get(f"{HEALTH}/components")
+    assert answered.status_code == 503
+    assert answered.json()["checks"]["internal_setup"] == "VISDOM_INTERNAL_READ_KEY is not set"
+
+
 def test_one_instance_down_is_degraded(client, monkeypatch):
     """The failure this exists for: the console is fine and no plots work."""
     monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097", "visdom-2:8097"])

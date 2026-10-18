@@ -11,7 +11,9 @@ The gateway signs each call with `VISDOM_INTERNAL_READ_KEY`. Visdom accepts the
 keys in `VISDOM_INTERNAL_READ_KEYS`, which compose fills with the current key
 and `VISDOM_INTERNAL_READ_KEY_PREVIOUS`. A signature is good for 60 seconds.
 
-Make a key with `openssl rand -hex 32`. To replace it:
+Make a key with `openssl rand -hex 32`. Compose refuses to start without one,
+and the gateway sends nothing until both the key and `internal-ca.pem` are in
+place; `/api/v1/health/components` names what is missing. To replace it:
 
 1. Copy the current key into `VISDOM_INTERNAL_READ_KEY_PREVIOUS` and put a new
    one in `VISDOM_INTERNAL_READ_KEY`.

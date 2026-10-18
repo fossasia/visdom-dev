@@ -19,6 +19,7 @@ import asyncio
 import concurrent.futures
 import json
 import logging
+import os
 import re
 import socket
 import ssl
@@ -62,19 +63,43 @@ def _read_within(response, deadline: float) -> bytes:
 ACTIVITY_PATH = "/vis/_activity"
 
 
+_reported: set[str] = set()
+
+
+def internal_setup_problem() -> str | None:
+    if not settings.VISDOM_INTERNAL_READ_KEY:
+        return "VISDOM_INTERNAL_READ_KEY is not set"
+    if not settings.VISDOM_INTERNAL_CA:
+        return "VISDOM_INTERNAL_CA is not set"
+    if not os.access(settings.VISDOM_INTERNAL_CA, os.R_OK):
+        return f"VISDOM_INTERNAL_CA {settings.VISDOM_INTERNAL_CA} cannot be read"
+    return None
+
+
+def _setup_is_complete() -> bool:
+    problem = internal_setup_problem()
+    if problem is None:
+        return True
+    if problem not in _reported:
+        _reported.add(problem)
+        logging.error("not calling the visdom instances: %s", problem)
+    return False
+
+
 def internal_url(address: str, path: str) -> str:
     host = address.rsplit(":", 1)[0]
     return f"https://{host}:{settings.VISDOM_INTERNAL_PORT}{path}"
 
 
 def internal_tls() -> ssl.SSLContext:
-    context = ssl.create_default_context(cafile=settings.VISDOM_INTERNAL_CA or None)
-    if settings.VISDOM_INTERNAL_CA:
-        context.check_hostname = False
+    context = ssl.create_default_context(cafile=settings.VISDOM_INTERNAL_CA)
+    context.check_hostname = False
     return context
 
 
 def certificate_days_left(address: str, timeout: float) -> float | None:
+    if not _setup_is_complete():
+        return None
     host = address.rsplit(":", 1)[0]
     try:
         with socket.create_connection((host, settings.VISDOM_INTERNAL_PORT), timeout=timeout) as raw:
@@ -87,6 +112,8 @@ def certificate_days_left(address: str, timeout: float) -> float | None:
 
 
 def _ask(address: str, timeout: float) -> tuple[bool, list[dict]]:
+    if not _setup_is_complete():
+        return False, []
     request = urllib.request.Request(
         internal_url(address, ACTIVITY_PATH),
         headers=signed_headers(settings.VISDOM_INTERNAL_READ_KEY, "GET", ACTIVITY_PATH),

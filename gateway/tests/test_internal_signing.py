@@ -2,6 +2,8 @@
 import io
 import json
 
+import pytest
+
 from app import internal_signing
 from app.admin import activity
 
@@ -46,3 +48,22 @@ def test_activity_is_asked_on_the_internal_port_with_a_signature(monkeypatch):
     assert request.full_url == "https://visdom-1:8098/vis/_activity"
     assert request.get_header("X-visdom-timestamp") == "1800000000"
     assert request.get_header("X-visdom-signature") == ACTIVITY_SIGNATURE
+
+
+@pytest.mark.parametrize(
+    "setting, value, problem",
+    [
+        ("VISDOM_INTERNAL_READ_KEY", "", "VISDOM_INTERNAL_READ_KEY is not set"),
+        ("VISDOM_INTERNAL_CA", "", "VISDOM_INTERNAL_CA is not set"),
+        ("VISDOM_INTERNAL_CA", "/nowhere/ca.pem", "VISDOM_INTERNAL_CA /nowhere/ca.pem cannot be read"),
+    ],
+)
+def test_nothing_is_sent_until_the_key_and_ca_are_set(monkeypatch, setting, value, problem):
+    sent = []
+    monkeypatch.setattr(activity.urllib.request, "urlopen", lambda *a, **k: sent.append(a))
+    monkeypatch.setattr(activity.settings, setting, value)
+
+    assert activity.internal_setup_problem() == problem
+    assert activity._ask("visdom-1:8097", 1.0) == (False, [])
+    assert activity.certificate_days_left("visdom-1:8097", 1.0) is None
+    assert sent == []
