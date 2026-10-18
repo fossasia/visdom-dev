@@ -20,6 +20,7 @@ def _hour(db, workspace_id, when, minutes=0, stored=0):
             broadcasts=0,
             broadcast_bytes=0,
             peak_bytes=stored,
+            current_bytes=stored,
         )
     )
     db.commit()

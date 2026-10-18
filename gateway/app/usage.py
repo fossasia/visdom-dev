@@ -205,7 +205,7 @@ def latest_storage(db: Session, workspace_ids) -> dict:
         .subquery()
     )
     rows = (
-        db.query(WorkspaceUsageHour.workspace_id, WorkspaceUsageHour.peak_bytes)
+        db.query(WorkspaceUsageHour.workspace_id, WorkspaceUsageHour.current_bytes)
         .join(
             newest,
             and_(
