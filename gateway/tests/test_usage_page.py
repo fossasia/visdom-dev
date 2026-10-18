@@ -3,7 +3,7 @@
 import datetime
 import uuid
 
-from app.models import WorkspaceUsageHour
+from app.models import Workspace, WorkspaceUsageHour, utcnow
 from app.routers.usage import month_start
 
 USAGE = "/api/v1/usage"
@@ -69,6 +69,23 @@ def test_storage_is_the_latest_reading_not_a_sum(client, make_user, make_workspa
 
     shown = client.get(USAGE, headers=user["headers"]).json()
     assert shown["workspaces"][0]["storage_bytes"] == 800
+
+
+def test_a_trashed_workspace_still_counts_toward_the_total(
+    client, make_user, make_workspace, db_session
+):
+    user = make_user()
+    kept = make_workspace(user)
+    trashed = make_workspace(user)
+    _hour(db_session, kept["id"], _this_month(), stored=300)
+    _hour(db_session, trashed["id"], _this_month(), stored=700)
+    row = db_session.query(Workspace).filter(Workspace.id == uuid.UUID(trashed["id"])).first()
+    row.trashed_at = utcnow()
+    db_session.commit()
+
+    shown = client.get(USAGE, headers=user["headers"]).json()
+    assert [ws["id"] for ws in shown["workspaces"]] == [kept["id"]]
+    assert shown["totals"]["storage_bytes"] == 1000
 
 
 def test_only_workspaces_you_own_are_shown(client, make_user, make_workspace, add_member, db_session):

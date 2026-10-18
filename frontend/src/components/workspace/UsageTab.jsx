@@ -36,8 +36,16 @@ const UsageTab = () => {
     );
   }
 
-  const rows = usage?.workspaces || [];
-  const totals = usage?.totals || { active_minutes: 0, storage_bytes: 0 };
+  if (!usage) {
+    return (
+      <section className="gc-panel">
+        <div className="gc-form-error">{error}</div>
+      </section>
+    );
+  }
+
+  const rows = usage.workspaces || [];
+  const totals = usage.totals || { active_minutes: 0, storage_bytes: 0 };
   const cap = usage?.workspace_storage_limit ?? null;
 
   return (
@@ -77,9 +85,7 @@ const UsageTab = () => {
         <div className="gc-panel-header">
           <span className="gc-panel-title">By workspace</span>
         </div>
-        {!usage ? (
-          <div className="gc-empty">Usage is unavailable right now.</div>
-        ) : rows.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="gc-empty">You don&apos;t own any workspaces yet.</div>
         ) : (
           rows.map((row) => (
