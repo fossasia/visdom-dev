@@ -44,8 +44,18 @@ x-visdom: &visdom
     - /internal-tls/internal.key
   volumes:
     - visdom_data:${VISDOM_ENV_PATH}
-    - ./deploy/internal-tls/internal.crt:/internal-tls/internal.crt:ro
-    - ./deploy/internal-tls/internal.key:/internal-tls/internal.key:ro
+    - type: bind
+      source: ./deploy/internal-tls/internal.crt
+      target: /internal-tls/internal.crt
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./deploy/internal-tls/internal.key
+      target: /internal-tls/internal.key
+      read_only: true
+      bind:
+        create_host_path: false
   depends_on:
     - gateway
 
@@ -97,7 +107,12 @@ services:
       VISDOM_INTERNAL_CA: /internal-tls/internal-ca.pem
       ADMIN_ENVIRONMENT: ${ADMIN_ENVIRONMENT:-}
     volumes:
-      - ./deploy/internal-tls/internal-ca.pem:/internal-tls/internal-ca.pem:ro
+      - type: bind
+        source: ./deploy/internal-tls/internal-ca.pem
+        target: /internal-tls/internal-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       db:
         condition: service_healthy

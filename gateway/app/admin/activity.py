@@ -71,8 +71,8 @@ def internal_setup_problem() -> str | None:
         return "VISDOM_INTERNAL_READ_KEY is not set"
     if not settings.VISDOM_INTERNAL_CA:
         return "VISDOM_INTERNAL_CA is not set"
-    if not os.access(settings.VISDOM_INTERNAL_CA, os.R_OK):
-        return f"VISDOM_INTERNAL_CA {settings.VISDOM_INTERNAL_CA} cannot be read"
+    if not os.path.isfile(settings.VISDOM_INTERNAL_CA) or not os.access(settings.VISDOM_INTERNAL_CA, os.R_OK):
+        return "VISDOM_INTERNAL_CA cannot be read"
     return None
 
 
@@ -82,7 +82,11 @@ def _setup_is_complete() -> bool:
         return True
     if problem not in _reported:
         _reported.add(problem)
-        logging.error("not calling the visdom instances: %s", problem)
+        logging.error(
+            "not calling the visdom instances: %s (VISDOM_INTERNAL_CA is %r)",
+            problem,
+            settings.VISDOM_INTERNAL_CA,
+        )
     return False
 
 

@@ -60,12 +60,16 @@ def test_an_internal_certificate_near_its_end_is_degraded(client, monkeypatch):
     assert answered.json()["checks"]["internal_certificate"] == "12 days left"
 
 
-def test_an_unreadable_internal_certificate_is_reported_as_unknown(client, monkeypatch):
-    monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097"])
-    monkeypatch.setattr(health, "activity_per_instance", lambda timeout: [("visdom-1:8097", False, [])])
-    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: None)
+def test_an_unreadable_internal_certificate_is_degraded(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097", "visdom-2:8097"])
+    monkeypatch.setattr(
+        health, "activity_per_instance", lambda timeout: [("visdom-1:8097", True, []), ("visdom-2:8097", True, [])]
+    )
+    days = {"visdom-1:8097": 400.0, "visdom-2:8097": None}
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: days[address])
     answered = client.get(f"{HEALTH}/components")
-    assert answered.json()["checks"]["internal_certificate"] == "unknown"
+    assert answered.status_code == 503
+    assert answered.json()["checks"]["internal_certificate"] == "could not be read on 1 of 2"
 
 
 def test_a_missing_internal_key_is_named_and_degraded(client, monkeypatch):
