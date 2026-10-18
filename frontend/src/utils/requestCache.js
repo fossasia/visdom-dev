@@ -4,6 +4,7 @@ const DEFAULT_TTL_MS = 30000;
 
 const entries = new Map();
 const inflight = new Map();
+let generation = 0;
 
 export const cachedGet = (key, fetcher, { ttl = DEFAULT_TTL_MS, force = false } = {}) => {
   if (!force) {
@@ -16,9 +17,10 @@ export const cachedGet = (key, fetcher, { ttl = DEFAULT_TTL_MS, force = false } 
     if (pending) return pending;
   }
 
+  const started = generation;
   const request = fetcher()
     .then((value) => {
-      entries.set(key, { value, expiresAt: Date.now() + ttl });
+      if (started === generation) entries.set(key, { value, expiresAt: Date.now() + ttl });
       return value;
     })
     .finally(() => {
@@ -35,6 +37,7 @@ export const invalidate = (prefix) => {
 };
 
 export const clearRequestCache = () => {
+  generation += 1;
   entries.clear();
   inflight.clear();
 };

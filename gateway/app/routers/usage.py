@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.billing import limit_for
 from app.dependencies import get_current_user, get_db
 from app.models import User, Workspace, WorkspaceUsageHour, utcnow
-from app.usage import MEGABYTE, latest_storage, owned_workspace_ids
+from app.usage import MEGABYTE, latest_storage, owned_workspace_ids, storage_used
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 
@@ -76,7 +76,7 @@ def my_usage(current_user: User = Depends(get_current_user), db: Session = Depen
         "workspace_storage_limit": None if per_workspace_mb is None else per_workspace_mb * MEGABYTE,
         "totals": {
             "active_minutes": sum(row["active_minutes"] for row in rows),
-            "storage_bytes": sum(row["storage_bytes"] for row in rows),
+            "storage_bytes": storage_used(db, current_user),
         },
         "workspaces": rows,
     }
