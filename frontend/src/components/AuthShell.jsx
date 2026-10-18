@@ -32,6 +32,8 @@ export const AuthTextButton = ({ onClick, children }) => (
   </button>
 );
 
+const FOOTER = { textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--vc-text-muted)' };
+
 const AuthShell = ({ subtitle, children }) => (
   <div className="auth-wrapper">
     <div className="visdom-panel auth-panel">
@@ -43,6 +45,11 @@ const AuthShell = ({ subtitle, children }) => (
         <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{subtitle}</div>
       </div>
       {children}
+      <div style={FOOTER}>
+        <AuthLink to="/privacy">Privacy</AuthLink>
+        {' · '}
+        <AuthLink to="/cookies">Cookies</AuthLink>
+      </div>
     </div>
   </div>
 );

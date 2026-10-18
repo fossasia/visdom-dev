@@ -314,6 +314,12 @@ fetchSuggestion();
             Sign in
           </Link>
         </div>
+
+        <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          <Link to="/privacy" style={{ color: 'var(--text-muted)' }}>Privacy</Link>
+          {' · '}
+          <Link to="/cookies" style={{ color: 'var(--text-muted)' }}>Cookies</Link>
+        </div>
       </div>
     </div>
   );
