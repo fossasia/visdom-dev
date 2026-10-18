@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 
 from app import heartbeat
 from app.models import UsageBaseline, Workspace, WorkspaceUsageHour, utcnow
+from app.usage import latest_storage
 
 _COUNTERS = ("writes", "broadcasts", "broadcast_bytes")
 _TICK_LOCK = 7234091
@@ -203,6 +204,7 @@ def record(db: Session, totals: dict, when: datetime.datetime | None = None) -> 
     if not ids:
         return 0
     known = {str(row_id) for (row_id,) in db.query(Workspace.id).filter(Workspace.id.in_(ids))}
+    stored = latest_storage(db, ids)
 
     bucket = hour_start(when)
     rows: dict = {}
@@ -211,7 +213,8 @@ def record(db: Session, totals: dict, when: datetime.datetime | None = None) -> 
         as_uuid = wanted[workspace_id]
         if as_uuid is None or str(as_uuid) not in known:
             continue
-        worked = any(slot[name] for name in _COUNTERS) or slot["peak_bytes"]
+        emptied = not slot["peak_bytes"] and stored.get(as_uuid, 0) > 0
+        worked = any(slot[name] for name in _COUNTERS) or slot["peak_bytes"] or emptied
         minutes = active_minutes_from(slot["mask"])
         if not worked and not minutes:
             continue
