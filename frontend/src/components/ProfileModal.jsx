@@ -4,6 +4,7 @@ import { Check, X } from 'lucide-react';
 import { api, useAuth } from '../context/AuthContext';
 import { useToast } from './toast/useToast';
 import { parseApiError } from '../utils/helpers';
+import DeleteAccountSection from './DeleteAccountSection';
 import ModalPortal from './ModalPortal';
 import PasswordInput from './PasswordInput';
 import { formatJoined, formatLastSignIn, planName } from '../utils/profileDetails';
@@ -227,6 +228,8 @@ const ProfileModal = ({ onClose }) => {
           Changing it signs you out on every other device.
         </div>
       </form>
+
+      <DeleteAccountSection onClose={onClose} />
     </ModalPortal>
   );
 };

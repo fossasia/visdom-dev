@@ -9,6 +9,9 @@ Loads configuration settings from environment variables or a local .env file.
 Manages database paths, JWT encryption secrets, and token expiration times.
 """
 
+import datetime
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,8 +34,15 @@ class Settings(BaseSettings):
     VISDOM_ACTIVITY_TIMEOUT: float = 1.0
     VISDOM_INTERNAL_PORT: int = 8098
     VISDOM_INTERNAL_READ_KEY: str = ""
+    VISDOM_INTERNAL_ADMIN_KEY: str = ""
     VISDOM_INTERNAL_CA: str = ""
     USAGE_SAMPLE_SECONDS: int = 60
+    RETENTION_SWEEP_HOURS: int = 24
+    RETENTION_ENFORCE: bool = False
+    RETENTION_TIMEOUT: float = 15.0
+    RETENTION_STARTS: datetime.date | None = None
+    RETENTION_WARN_DAYS: int = 3
+    ACCOUNT_DELETION_HOURS: int = 6
     SUPPORT_CONTACT: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
@@ -42,5 +52,10 @@ class Settings(BaseSettings):
     MAIL_FROM_NAME: str = "Visdom"
 
     model_config = SettingsConfigDict(env_file=".env")
+
+    @field_validator("RETENTION_STARTS", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value):
+        return value or None
 
 settings = Settings()

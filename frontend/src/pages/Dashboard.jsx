@@ -10,6 +10,7 @@ import KeysTab from '../components/workspace/KeysTab';
 import BillingTab from '../components/workspace/BillingTab';
 import UsageTab from '../components/workspace/UsageTab';
 import PendingInvitesBanner from '../components/workspace/PendingInvitesBanner';
+import RetentionBanner from '../components/workspace/RetentionBanner';
 import ProfileModal from '../components/ProfileModal';
 import { readScoped, writeScoped } from '../utils/storage';
 import { cachedGet, invalidate } from '../utils/requestCache';
@@ -42,6 +43,28 @@ const Dashboard = () => {
   });
 
   const isAdmin = activeWorkspace?.role === 'admin';
+  const activeWorkspaceId = activeWorkspace?.id;
+  const [retention, setRetention] = useState(null);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRetention(null);
+      return undefined;
+    }
+    let live = true;
+    const key = `/workspaces/${activeWorkspaceId}/retention`;
+    cachedGet(key, () => api.get(key).then((res) => res.data))
+      .then((data) => {
+        if (live) setRetention(data);
+      })
+      .catch(() => {
+        if (live) setRetention(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     writeScoped(ACTIVE_TAB_STORAGE_KEY, user?.id, activeTab);
@@ -192,6 +215,8 @@ fetchWorkspaces();
           onDeclined={handleInviteDeclined}
         />
 
+        {activeTab !== 'workspaces' && <RetentionBanner workspace={activeWorkspace} notice={retention} />}
+
         {needsWorkspace ? (
           <section className="gc-panel">
             <div className="gc-empty">
@@ -207,6 +232,7 @@ fetchWorkspaces();
                 workspace={activeWorkspace}
                 isAdmin={isAdmin}
                 currentUserId={user?.id}
+                retention={retention}
                 onDeleted={handleWorkspaceRemoved}
                 onLeave={handleWorkspaceRemoved}
               />

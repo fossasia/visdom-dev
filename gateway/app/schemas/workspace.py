@@ -11,7 +11,7 @@ Standardizes the fields for API validation using UUID and Email.
 
 import datetime
 import uuid
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -74,6 +74,15 @@ class MemberRoleUpdate(BaseModel):
 
 class OwnerTransfer(BaseModel):
     user_id: uuid.UUID
+
+
+class RetentionNotice(BaseModel):
+    plan: Optional[str] = None
+    days: Optional[int] = None
+    state: Literal["forever", "not_enforced", "scheduled", "active"]
+    starts_on: Optional[datetime.date] = None
+    warn_days: int
+    expiring: Optional[List[str]] = None
 
 
 # --- SHARED LINK SCHEMAS ---

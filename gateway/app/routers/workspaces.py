@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import retention
+from app.admin.activity import FilesKept, drop_workspace
 from app.billing import at_limit, limit_for
 from app.config import settings
 from app.dependencies import commit_or_conflict, get_current_user, get_db
@@ -29,6 +31,7 @@ from app.schemas.workspace import (
     MyWorkspaceResponse,
     OwnerTransfer,
     PendingInviteResponse,
+    RetentionNotice,
     SharedLinkCreate,
     SharedLinkJoinRequest,
     SharedLinkJoinResponse,
@@ -187,13 +190,39 @@ def delete_workspace(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Deletes a workspace and its memberships/shared links. Admins only."""
+    """Deletes a workspace, its memberships, shared links and plot files. Admins only.
+
+    The files go first. If an instance does not confirm, nothing is deleted and
+    the caller is asked to try again, so no rows are left pointing at files that
+    are gone and no files are left that nothing points at.
+    """
     _require_admin(db, workspace_id, current_user.id)
     workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+    try:
+        drop_workspace(workspace.id)
+    except FilesKept:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The workspace could not be deleted right now. Please try again.",
+        ) from None
     db.delete(workspace)
     db.commit()
+
+
+@router.get("/{workspace_id}/retention", response_model=RetentionNotice)
+def workspace_retention(
+    workspace_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """How long this workspace keeps work, and what is about to go."""
+    _require_member(db, workspace_id, current_user.id)
+    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+    return retention.notice(db, workspace)
 
 
 @router.patch("/{workspace_id}/star", response_model=MyWorkspaceResponse)

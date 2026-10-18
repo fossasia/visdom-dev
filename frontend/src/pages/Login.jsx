@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
+import { useToast } from '../components/toast/useToast';
 import { resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
 
 const Login = () => {
@@ -12,6 +13,7 @@ const Login = () => {
   const [submitting, setSubmitting] = useState(false);
   
   const { login } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const from = resolvePostAuthTarget(location);
@@ -22,7 +24,10 @@ const Login = () => {
     setSubmitting(true);
     
     try {
-      await login(email, password);
+      const signedIn = await login(email, password);
+      if (signedIn?.deletion_cancelled) {
+        toast.success('Welcome back. Your account is no longer set to be deleted.', { duration: 8000 });
+      }
       redirectAfterAuth(from, navigate);
     } catch (err) {
       const detail = err.response?.data?.detail;

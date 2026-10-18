@@ -140,7 +140,7 @@ def _touch_last_used(db: Session, key_record: APIKey) -> None:
 
 def resolve_active_api_key(db: Session, raw_key: str | None) -> APIKey | None:
     """Return the APIKey for a raw key if it exists, is active, unexpired, and its
-    owner is active; otherwise None. Does not raise, so callers that only need a
+    owner is active and not waiting to be deleted; otherwise None. Does not raise, so callers that only need a
     yes/no answer (e.g. the reverse-proxy auth gate) can use it directly."""
     if not raw_key:
         return None
@@ -158,7 +158,8 @@ def resolve_active_api_key(db: Session, raw_key: str | None) -> APIKey | None:
             expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
         if utcnow() > expires_at:
             return None
-    if not key_record.owner or not key_record.owner.is_active:
+    owner = key_record.owner
+    if not owner or not owner.is_active or owner.deletion_requested_at is not None:
         return None
     _touch_last_used(db, key_record)
     return key_record

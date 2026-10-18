@@ -6,8 +6,9 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../toast/useToast';
 import DeleteWorkspaceModal from './DeleteWorkspaceModal';
 import { parseApiError } from '../../utils/helpers';
+import { expiringHeading, isExpiringSoon, retentionSummary } from '../../utils/retention';
 
-const WorkspaceSettingsTab = ({ workspace, isAdmin, currentUserId, onDeleted, onLeave }) => {
+const WorkspaceSettingsTab = ({ workspace, isAdmin, currentUserId, retention, onDeleted, onLeave }) => {
   const [leaving, setLeaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const confirm = useConfirm();
@@ -60,6 +61,25 @@ const WorkspaceSettingsTab = ({ workspace, isAdmin, currentUserId, onDeleted, on
           </div>
         </div>
       </div>
+
+      {retention && (
+        <div className="gc-border-section-t gc-mb-lg">
+          <div className="gc-panel-title gc-section-title-compact">
+            History
+          </div>
+          <p className="gc-panel-sub">{retentionSummary(retention)}</p>
+          {isExpiringSoon(retention) && (
+            <>
+              <p className="gc-panel-sub">{expiringHeading(retention)}</p>
+              <ul className="gc-delete-list">
+                {retention.expiring.map((eid) => (
+                  <li key={eid}>{eid}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       <div className={`gc-border-section-t ${isAdmin ? 'gc-mb-lg' : 'mb-0'}`}>
         <div className="gc-panel-title gc-section-title-compact">

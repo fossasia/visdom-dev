@@ -61,6 +61,9 @@ def _read_within(response, deadline: float) -> bytes:
 
 
 ACTIVITY_PATH = "/vis/_activity"
+DROP_PATH = "/vis/_drop"
+EVICT_PATH = "/vis/_evict"
+RETIRE_PATH = "/vis/_retire"
 
 
 _reported: set[str] = set()
@@ -95,6 +98,34 @@ def internal_tls() -> ssl.SSLContext:
     context = ssl.create_default_context(cafile=settings.VISDOM_INTERNAL_CA)
     context.check_hostname = False
     return context
+
+
+def internal_request(address: str, path: str, key: str, body: bytes | None = None) -> urllib.request.Request:
+    method = "GET" if body is None else "POST"
+    headers = signed_headers(key, method, path, body or b"")
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    return urllib.request.Request(internal_url(address, path), data=body, headers=headers, method=method)
+
+
+def admin_call(address: str, path: str, body: bytes, timeout: float) -> dict | None:
+    if not _setup_is_complete():
+        return None
+    if not settings.VISDOM_INTERNAL_ADMIN_KEY:
+        logging.error("not calling %s on %s: VISDOM_INTERNAL_ADMIN_KEY is not set", path, address)
+        return None
+    request = internal_request(address, path, settings.VISDOM_INTERNAL_ADMIN_KEY, body)
+    deadline = time.monotonic() + timeout
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=internal_tls()) as response:
+            answer = json.loads(_read_within(response, deadline) or b"{}")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        logging.warning("could not call %s on %s: %s", path, address, exc)
+        return None
+    if not isinstance(answer, dict):
+        logging.warning("%s on %s did not answer in the expected shape", path, address)
+        return None
+    return answer
 
 
 def certificate_days_left(address: str, timeout: float) -> float | None:
@@ -295,3 +326,79 @@ def activity_per_instance(timeout: float | None = None) -> list[tuple]:
 def activity_by_workspace(timeout: float | None = None) -> dict[str, dict]:
     """Live viewer/writer counts keyed by workspace id, across all instances."""
     return activity_snapshot(timeout)["workspaces"]
+
+
+def evict_workspace(slug: str, reason: str | None = None, timeout: float | None = None) -> int:
+    """Ask every instance to close the sockets it holds for a workspace.
+
+    Every instance is asked rather than only the one the proxy currently hashes
+    the workspace onto. Sockets outlive a reassignment, so the instance holding
+    them may no longer be the one serving new connections, and asking the wrong
+    one would leave exactly the sockets this is meant to close.
+
+    Best effort on purpose. The refusal at resolve time is what actually
+    withdraws a workspace; this only decides whether it takes effect now or at
+    the next resolve, so an instance that cannot be reached costs promptness
+    rather than correctness.
+    """
+    addresses = instance_addresses()
+    if not addresses or not slug:
+        return 0
+    if timeout is None:
+        timeout = settings.VISDOM_ACTIVITY_TIMEOUT
+
+    payload = {"workspace_slug": slug}
+    if reason:
+        payload["reason"] = reason
+    body = json.dumps(payload).encode()
+
+    closed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
+        for answer in pool.map(lambda a: admin_call(a, EVICT_PATH, body, timeout), addresses):
+            closed += _closed(answer)
+    return closed
+
+
+def _closed(answer: dict | None) -> int:
+    try:
+        return int((answer or {}).get("closed", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+class FilesKept(RuntimeError):
+    """Some instance did not confirm it let go of a workspace, so its files stay."""
+
+
+def drop_workspace(workspace_id, timeout: float | None = None) -> dict:
+    """Ask every instance to remove a workspace for good, files included.
+
+    Every instance has to answer. One that holds the workspace in memory and
+    misses the call could write a file back after another has removed the
+    directory, so a silent instance stops the removal instead of letting it
+    half happen. The caller keeps the rows and tries again later.
+
+    With no instances configured there is nothing to ask and nothing on disk.
+    """
+    addresses = instance_addresses()
+    result = {"asked": len(addresses), "removed": False, "bytes": 0}
+    if not addresses:
+        return result
+    if timeout is None:
+        timeout = settings.RETENTION_TIMEOUT
+
+    body = json.dumps({"workspace_id": str(workspace_id)}).encode()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
+        answers = list(pool.map(lambda a: admin_call(a, DROP_PATH, body, timeout), addresses))
+
+    silent = [address for address, answer in zip(addresses, answers, strict=True) if answer is None]
+    if silent:
+        raise FilesKept(
+            "The plot files could not be removed because "
+            f"{', '.join(silent)} did not answer. Nothing was deleted; try again."
+        )
+    for answer in answers:
+        if answer.get("removed"):
+            result["removed"] = True
+            result["bytes"] += int(answer.get("bytes") or 0)
+    return result

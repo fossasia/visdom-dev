@@ -384,3 +384,23 @@
   padding-top: 18px;
   border-top: 1px solid var(--vc-border);
 }
+
+.gc-delete-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gc-retention-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.gc-retention-envs {
+  font-family: monospace;
+  font-size: 12.5px;
+  word-break: break-all;
+}

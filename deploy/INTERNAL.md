@@ -1,6 +1,7 @@
 # The internal port
 
-Each visdom instance serves `/_activity` and `/_metrics` on a second port,
+Each visdom instance serves `/_activity`, `/_metrics`, `/_evict`, `/_retire`
+and `/_drop` on a second port,
 `VISDOM_INTERNAL_PORT` (8098). nginx never forwards it and compose does not
 publish it, so only containers on the stack's network can reach it. On top of
 that, every request is signed and the port only speaks TLS.
@@ -19,6 +20,14 @@ place; `/api/v1/health/components` names what is missing. To replace it:
    one in `VISDOM_INTERNAL_READ_KEY`.
 2. `docker compose up -d` recreates the instances and the gateway with both.
 3. Clear `VISDOM_INTERNAL_READ_KEY_PREVIOUS` and run `docker compose up -d` again.
+
+The calls that change something, closing a workspace's tabs, removing old
+environments and removing a deleted workspace's files, are signed with
+`VISDOM_INTERNAL_ADMIN_KEY` instead, which visdom checks against
+`VISDOM_INTERNAL_ADMIN_KEYS`. It is a separate key so the read key alone cannot
+remove anything. Make and replace it the same way, with
+`VISDOM_INTERNAL_ADMIN_KEY_PREVIOUS`. Without it, nothing is removed: a
+workspace or account deletion answers that it could not be done right now.
 
 ## TLS
 

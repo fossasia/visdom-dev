@@ -111,7 +111,7 @@ export const AuthProvider = ({ children }) => {
       headers: { Authorization: `Bearer ${token}` }
     });
     setUser(userResponse.data);
-    return userResponse.data;
+    return { ...userResponse.data, deletion_cancelled: Boolean(loginResponse.data.deletion_cancelled) };
   };
 
   const register = async (email, password, username) => {

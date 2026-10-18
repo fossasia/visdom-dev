@@ -72,10 +72,32 @@ class PasswordResetConfirm(BaseModel):
     password: str = Field(..., min_length=6, max_length=100)
 
 
+class AccountDeletionRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=100)
+
+
+class DeletionWorkspace(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    reason: Optional[str] = None
+
+
+class DeletionPreview(BaseModel):
+    grace_days: int
+    blockers: List[DeletionWorkspace]
+    leaving_with: List[DeletionWorkspace]
+
+
+class DeletionScheduled(BaseModel):
+    delete_after: datetime.datetime
+
+
 # --- TOKEN SCHEMAS ---
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    deletion_cancelled: bool = False
 
 
 
