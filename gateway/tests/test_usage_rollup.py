@@ -10,6 +10,7 @@ import datetime
 
 from app import usage_rollup
 from app.models import UsageBaseline, WorkspaceUsageHour
+from app.usage import latest_storage
 
 A = "visdom-1:8097"
 B = "visdom-2:8097"
@@ -273,3 +274,16 @@ def test_a_reading_keeps_good_numbers_as_numbers():
         "active_hour": 3,
         "active_minutes_mask": 0,
     }
+
+
+def test_a_workspace_emptied_out_drops_to_zero_storage(
+    client, make_user, make_workspace, db_session
+):
+    ws = make_workspace(make_user())["id"]
+    _tick(db_session, (A, True, [_entry(ws, stored=900)]), when=datetime.datetime(2026, 5, 4, 10, tzinfo=UTC))
+    _tick(db_session, (A, True, [_entry(ws, stored=0)]), when=datetime.datetime(2026, 5, 4, 11, tzinfo=UTC))
+    _tick(db_session, (A, True, [_entry(ws, stored=0)]), when=datetime.datetime(2026, 5, 4, 12, tzinfo=UTC))
+
+    workspace_id = _rows(db_session)[0].workspace_id
+    assert latest_storage(db_session, [workspace_id]) == {workspace_id: 0}
+    assert len(_rows(db_session)) == 2
