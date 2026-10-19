@@ -42,6 +42,15 @@ def test_every_instance_is_asked_and_the_bytes_are_added_up(instances):
     assert all(str(workspace_id).encode() in body for _, body in asked)
 
 
+def test_a_size_that_is_not_a_number_counts_as_nothing(instances):
+    instances({
+        "visdom-1:8097": {"removed": True, "bytes": "n/a"},
+        "visdom-2:8097": {"removed": True, "bytes": 200},
+    })
+
+    assert activity.drop_workspace(uuid.uuid4()) == {"asked": 2, "removed": True, "bytes": 200}
+
+
 def test_one_silent_instance_stops_the_removal(instances):
     instances({"visdom-1:8097": {"removed": True, "bytes": 300}, "visdom-2:8097": None})
 

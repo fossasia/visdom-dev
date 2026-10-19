@@ -404,5 +404,12 @@ def drop_workspace(workspace_id, timeout: float | None = None) -> dict:
     for answer in answers:
         if answer.get("removed"):
             result["removed"] = True
-            result["bytes"] += int(answer.get("bytes") or 0)
+            result["bytes"] += _bytes(answer)
     return result
+
+
+def _bytes(answer: dict) -> int:
+    try:
+        return max(int(answer.get("bytes") or 0), 0)
+    except (TypeError, ValueError):
+        return 0

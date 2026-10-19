@@ -9,7 +9,9 @@ Closing an account: a request, a waiting period, then removal.
 
 A request stops the account working straight away but removes nothing. Signing
 in during the next ``GRACE_DAYS`` cancels it. After that the account goes for
-good, and so do the workspaces nobody else was using.
+good, and so do the workspaces nobody else was using, and signing in is refused:
+removal may already be partway through, and an account handed back then could
+be missing some of its files.
 
 A workspace other people still use never goes with the account. Its owner, or
 its only admin, has to put someone else in charge first, so a team is never
@@ -22,9 +24,13 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.admin.activity import FilesKept, drop_workspace
+from app.database import SessionLocal
 from app.models import AdminAction, Membership, User, Workspace, WorkspaceInvite, utcnow
+from app.retention import only_sweep
 
 GRACE_DAYS = 30
+
+_DELETION_LOCK = 7234093
 
 _OWNER = "you own it. Make another member the owner from the Members tab."
 _LAST_ADMIN = "you are its only admin. Make another member an admin from the Members tab."
@@ -96,6 +102,11 @@ def request(db: Session, user: User) -> datetime.datetime:
     return delete_after(user)
 
 
+def final(user: User, now: datetime.datetime | None = None) -> bool:
+    deadline = delete_after(user)
+    return deadline is not None and deadline <= (now or utcnow())
+
+
 def cancel(user: User) -> bool:
     """Called on sign-in. Returns whether there was a request to cancel."""
     if user.deletion_requested_at is None:
@@ -125,13 +136,14 @@ def _heir(db: Session, workspace_id, user_id):
 def erase(db: Session, user_id, now: datetime.datetime | None = None) -> dict | None:
     """Remove one account whose waiting period is over.
 
-    The row is locked and the deadline checked again, so a sign-in that lands
-    at the same moment wins, and two workers cannot both remove it. An account
-    that has picked up a blocker since the request is left alone and logged,
-    rather than taking a shared workspace with it.
+    The row is locked and the deadline checked again, so two workers cannot
+    both remove it. An account that has picked up a blocker since the request
+    is left alone and logged, rather than taking a shared workspace with it.
 
     The plot files of the workspaces going with it are removed first. If any
     instance does not confirm, the account stays and the next tick tries again.
+    A refusal ends the transaction, so the row is not held while the remaining
+    accounts are worked through.
     """
     cutoff = (now or utcnow()) - datetime.timedelta(days=GRACE_DAYS)
     user = (
@@ -152,6 +164,7 @@ def erase(db: Session, user_id, now: datetime.datetime | None = None) -> dict | 
         logging.warning("account %s is due for deletion but still runs %s", user.id, exc)
     except FilesKept as exc:
         logging.warning("account %s is due for deletion but kept: %s", user.id, exc)
+    db.commit()
     return None
 
 
@@ -164,7 +177,9 @@ def remove(db: Session, user: User, reason: str, staff_id=None, staff_email=None
 
     Refused with ``StillNeeded`` while the account is responsible for a
     workspace other people use, and with ``FilesKept`` when an instance did not
-    confirm that the plot files are gone. Either way nothing has been removed.
+    confirm that the plot files are gone. Either way the account and its rows
+    stay. Files already removed for an earlier workspace stay removed, which is
+    why signing in no longer cancels once the waiting period is over.
     """
     state = standing(db, user)
     if state["blockers"]:
@@ -222,3 +237,14 @@ def erase_due(db: Session, now: datetime.datetime | None = None) -> int:
             logging.exception("could not delete account %s", user_id)
             db.rollback()
     return erased
+
+
+def erase_once() -> int | None:
+    with only_sweep(key=_DELETION_LOCK) as mine:
+        if not mine:
+            return None
+        db = SessionLocal()
+        try:
+            return erase_due(db)
+        finally:
+            db.close()

@@ -198,3 +198,48 @@ def test_a_blocker_that_appears_later_stops_the_removal(client, make_user, make_
 
     assert account_deletion.erase_due(db_session) == 0
     assert _record(db_session, user) is not None
+
+
+def test_after_the_deadline_signing_in_is_refused_and_the_request_stands(
+    client, make_user, make_workspace, db_session
+):
+    user = make_user()
+    make_workspace(user)
+    assert _request(client, user).status_code == 202
+    _age(db_session, user, account_deletion.GRACE_DAYS + 1)
+
+    response = _login(client, user)
+
+    assert response.status_code == 403
+    assert _record(db_session, user).deletion_requested_at is not None
+
+
+def test_a_refused_removal_does_not_hold_the_account_row(client, make_user, make_workspace, db_session):
+    user = make_user()
+    other = make_user()
+    workspace = make_workspace(user)
+    assert _request(client, user).status_code == 202
+    db_session.add(
+        Membership(
+            user_id=uuid.UUID(other["id"]),
+            workspace_id=uuid.UUID(workspace["id"]),
+            role="member",
+        )
+    )
+    db_session.commit()
+    _age(db_session, user, account_deletion.GRACE_DAYS + 1)
+
+    assert account_deletion.erase(db_session, uuid.UUID(user["id"])) is None
+    assert not db_session.in_transaction()
+
+
+def test_due_accounts_are_removed_without_the_lock_on_a_database_that_has_none(
+    client, make_user, db_session, monkeypatch
+):
+    user = make_user()
+    assert _request(client, user).status_code == 202
+    _age(db_session, user, account_deletion.GRACE_DAYS + 1)
+    monkeypatch.setattr(account_deletion, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    assert account_deletion.erase_once() == 1

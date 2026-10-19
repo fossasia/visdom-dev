@@ -148,6 +148,24 @@ def test_an_instance_that_does_not_answer_does_not_stop_the_sweep(db_session, in
     assert summary["removed"] == 1
 
 
+def test_a_dormant_looking_workspace_waits_when_an_instance_is_silent(db_session, instances):
+    """The silent one may be the holder, and sweeping beside it loses nothing
+    for good: its next save writes the files straight back."""
+    _workspace(db_session, _owner(db_session, "free"), slug="unsure")
+    asked = []
+
+    def flaky(address, workspace_id, days, dry_run, timeout):
+        asked.append((address, dry_run))
+        if address == "visdom-1:8097":
+            return None
+        return {"loaded": False, "envs": ["january"], "removed": 0 if dry_run else 1}
+
+    summary = retention.sweep(db_session, enforce=True, ask=flaky)
+
+    assert summary["removed"] == 0
+    assert all(dry_run for _address, dry_run in asked)
+
+
 @pytest.fixture
 def rules(monkeypatch):
     def _set(enforce=False, starts=None, warn=3):
