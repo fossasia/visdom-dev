@@ -1,101 +1,1017 @@
 {% extends "sqladmin/base.html" %}
-{% from 'sqladmin/_macros.html' import display_menu %}
-{% block body %}
-<div class="wrapper">
-  <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md navbar-dark" data-bs-theme="dark">
-    <div class="container-fluid">
-      <h1 class="navbar-brand navbar-brand-autodark">
-        <a href="{{ url_for('admin:index') }}">
-          {% if admin.logo_url %}
-          <img src="{{ admin.logo_url }}" width="{{ admin.logo_width }}" height="{{ admin.logo_height }}" alt="{{ admin.title }}" class="navbar-brand-logo" />
-          {% else %}
-          <h3>{{ admin.title }}</h3>
-          {% endif %}
-        </a>
-      </h1>
-      <nav class="navbar navbar-expand-sm shadow-none" id="navbar-menu"
-        data-sqladmin-menu="{{ admin.base_url }}">
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
-          aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarSupportedContent">
-          {{ display_menu(admin._menu, request) }}
-        </div>
-      </nav>
-      {% if admin.authentication_backend %}
-      <a href="{{ request.url_for('admin:logout') }}" class="btn btn-secondary btn-icon m-2 px-2">
-        <span class="me-2">{{ _("Logout") }}</span>
-        <i class="fa fa-sign-out"></i>
-      </a>
-      {% endif %}
-    </div>
-  </aside>
-  <div class="page-wrapper">
-    {% block topbar %}
-    {% set env = admin_environment() %}
-    {% set who = admin_identity(request) %}
-    {% set show_switcher = i18n_config.language_switcher and i18n_config.language_switcher | length > 1 %}
-    <header class="navbar navbar-expand-md d-print-none sticky-top shadow-sm{% if env.danger %} bg-danger{% else %} bg-dark{% endif %}" data-bs-theme="dark">
-      <div class="container-fluid">
-        {% if env.name %}
-        <span class="navbar-text fw-bold text-uppercase text-white me-3" style="letter-spacing:.08em;">
-          <i class="fa fa-server me-2"></i>{{ env.name }}
-        </span>
-        {% endif %}
-        <div class="navbar-nav flex-row ms-auto align-items-center gap-3" id="topbar-end">
-          {% if who.email %}
-          <span class="navbar-text text-white-50 small">
-            {{ who.email }}
-            <span class="badge bg-secondary ms-1">{{ who.role }}</span>
-          </span>
-          {% endif %}
-          {% if show_switcher %}
-          <div class="nav-item dropdown">
-            <a href="#" class="btn btn-outline-light dropdown-toggle d-flex align-items-center px-3"
-              data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Language') }}">
-              <i class="fa fa-language me-2"></i>
-              <span>{{ get_locale_display_name(get_locale()) }}</span>
-            </a>
-            <div class="dropdown-menu dropdown-menu-end">
-              {% for code in i18n_config.language_switcher %}
-              <a class="dropdown-item {% if code == get_locale() %}active{% endif %}"
-                href="{{ request.url.include_query_params(lang=code) }}">
-                {{ get_locale_display_name(code) }}
-              </a>
-              {% endfor %}
-            </div>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </header>
-    {% endblock %}
-    <div class="container-fluid">
-      <div class="page-header d-print-none">
-        {% block content_header %}
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">{{ title }}</h2>
-            <div class="page-pretitle">{{ subtitle }}</div>
-          </div>
-        </div>
-        {% endblock %}
-      </div>
-    </div>
-    <div class="page-body flex-grow-1">
-      <div class="container-fluid">
-        <div class="row row-deck row-cards">
-          {% block content %} {% endblock %}
-          {% block flash %}
-          {% include 'sqladmin/flash.html' %}
-          {% endblock %}
-          {% block secret_modal %}
-          {% include 'sqladmin/secret_modal.html' %}
-          {% endblock %}
-        </div>
-      </div>
-    </div>
-  </div>
+
+{% macro nav_row(menu, request) %}
+<a class="ap-nav-row {% if menu.is_active(request) %}is-active{% endif %}" href="{{ menu.url(request) }}">
+  {% if menu.icon %}<i class="{{ menu.icon }} ap-nav-icon"></i>{% endif %}
+  <span>{{ menu.display_name }}</span>
+</a>
+{% endmacro %}
+
+{% macro nav_group(menu, request) %}
+{% set shown = [] %}
+{% for child in menu.children %}
+{% if child.is_visible(request) and child.is_accessible(request) %}
+{% set _ = shown.append(child) %}
+{% endif %}
+{% endfor %}
+{% if shown %}
+<div class="ap-nav-group">
+  <div class="ap-nav-label">{{ menu.name }}</div>
+  {% for child in shown %}
+  {{ nav_row(child, request) }}
+  {% endfor %}
 </div>
+{% endif %}
+{% endmacro %}
+
+{% block head_tail %}
+<style>
+  :root {
+    --ap-blue: #2f6ef0;
+    --ap-blue-bright: #4d8bf5;
+    --ap-blue-soft: rgba(47, 110, 240, .1);
+    --ap-chrome: #1d273b;
+    --ap-side: #1a2332;
+    --ap-on-dark: rgba(255, 255, 255, .58);
+    --ap-bg: #f5f6f8;
+    --ap-surface: #ffffff;
+    --ap-ink: #1d1d1f;
+    --ap-ink-soft: #6e7481;
+    --ap-hairline: rgba(0, 0, 0, .07);
+    --ap-radius: 14px;
+    --ap-radius-sm: 10px;
+    --ap-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 6px 20px rgba(16, 24, 40, .05);
+    --ap-ease: cubic-bezier(.25, .1, .25, 1);
+    --ap-side-width: 232px;
+    --ap-chrome-height: 52px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    background: var(--ap-bg);
+    color: var(--ap-ink);
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -.006em;
+  }
+
+  .ap-chrome {
+    background: var(--ap-chrome);
+    color: #fff;
+    height: var(--ap-chrome-height);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+  }
+
+  .ap-chrome.is-danger {
+    background: #a4262c;
+  }
+
+  .ap-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    letter-spacing: -.01em;
+    white-space: nowrap;
+    width: calc(var(--ap-side-width) - 20px);
+  }
+
+  .ap-brand:hover {
+    color: #fff;
+    text-decoration: none;
+  }
+
+  .ap-limits {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px 16px;
+  }
+
+  .ap-limit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+  }
+
+  .ap-limit-name {
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+  }
+
+  .ap-brand-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    flex: none;
+  }
+
+  .ap-env {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 980px;
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+    flex: none;
+  }
+
+  .ap-context {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .ap-context-name {
+    font-size: 13px;
+    color: var(--ap-on-dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 320px;
+  }
+
+  .ap-context-name strong {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .ap-chrome-end {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+  }
+
+  .ap-who {
+    font-size: 13px;
+    color: var(--ap-on-dark);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .ap-role {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 980px;
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+  }
+
+  .ap-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 980px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+    transition: background .2s var(--ap-ease), transform .2s var(--ap-ease);
+  }
+
+  .ap-chip:hover {
+    background: rgba(255, 255, 255, .24);
+    color: #fff;
+    text-decoration: none;
+    transform: scale(1.02);
+  }
+
+  .ap-chip.is-primary {
+    background: var(--ap-blue);
+  }
+
+  .ap-chip.is-primary:hover {
+    background: var(--ap-blue-bright);
+  }
+
+  .ap-chip.is-danger {
+    background: rgba(255, 255, 255, .12);
+    color: #ffb4b4;
+  }
+
+  .ap-chip.is-danger:hover {
+    background: #a4262c;
+    color: #fff;
+  }
+
+  .ap-shell {
+    display: flex;
+    align-items: flex-start;
+    min-height: calc(100vh - var(--ap-chrome-height));
+  }
+
+  .ap-side {
+    width: var(--ap-side-width);
+    flex: none;
+    align-self: stretch;
+    background: var(--ap-side);
+    padding: 18px 12px 40px;
+    position: sticky;
+    top: var(--ap-chrome-height);
+    max-height: calc(100vh - var(--ap-chrome-height));
+    overflow-y: auto;
+  }
+
+  .ap-nav-group {
+    margin-bottom: 22px;
+  }
+
+  .ap-nav-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .38);
+    padding: 0 12px;
+    margin-bottom: 6px;
+  }
+
+  .ap-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 12px;
+    margin-bottom: 2px;
+    border-radius: var(--ap-radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ap-on-dark);
+    text-decoration: none;
+    transition: background .2s var(--ap-ease), color .2s var(--ap-ease);
+  }
+
+  .ap-nav-row:hover {
+    background: rgba(255, 255, 255, .07);
+    color: #fff;
+    text-decoration: none;
+  }
+
+  .ap-nav-row.is-active {
+    background: var(--ap-blue);
+    color: #fff;
+  }
+
+  .ap-nav-row.is-active .ap-nav-icon {
+    opacity: 1;
+  }
+
+  .ap-nav-icon {
+    width: 16px;
+    text-align: center;
+    font-size: 13px;
+    opacity: .6;
+    flex: none;
+  }
+
+  .ap-main {
+    flex: 1;
+    min-width: 0;
+    padding: 32px 28px 96px;
+  }
+
+  .ap-page-title {
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -.021em;
+    margin: 0;
+  }
+
+  .ap-page-subtitle {
+    font-size: 14px;
+    color: var(--ap-ink-soft);
+    margin-top: 4px;
+  }
+
+  .ap-page-header {
+    margin-bottom: 24px;
+  }
+
+  .ap-menu {
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius-sm);
+    box-shadow: var(--ap-shadow);
+    padding: 6px;
+    margin-top: 6px;
+    min-width: 200px;
+  }
+
+  .ap-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    color: var(--ap-ink);
+  }
+
+  .ap-menu-item:hover {
+    background: rgba(0, 0, 0, .04);
+  }
+
+  .ap-menu-icon {
+    width: 16px;
+    text-align: center;
+    font-size: 12px;
+    opacity: .6;
+  }
+
+  .card {
+    background: var(--ap-surface);
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius);
+    box-shadow: var(--ap-shadow);
+  }
+
+  .card-header {
+    border-bottom: 1px solid var(--ap-hairline);
+    padding: 16px 20px;
+    min-height: 0;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 0;
+  }
+
+  .table {
+    --tblr-table-color: var(--ap-ink);
+    font-size: 14px;
+  }
+
+  .table thead th {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: none;
+    color: var(--ap-ink-soft);
+    border-bottom: 1px solid var(--ap-hairline);
+    padding: 12px 16px;
+  }
+
+  .table tbody td {
+    padding: 14px 16px;
+    border-top: 1px solid var(--ap-hairline);
+    vertical-align: middle;
+  }
+
+  .table tbody tr:hover {
+    background: rgba(0, 0, 0, .015);
+  }
+
+  .btn {
+    border-radius: 980px;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 8px 18px;
+    transition: all .2s var(--ap-ease);
+  }
+
+  .btn:hover {
+    transform: scale(1.02);
+  }
+
+  .btn-primary {
+    background: var(--ap-blue);
+    border-color: var(--ap-blue);
+  }
+
+  .btn-primary:hover {
+    background: var(--ap-blue-bright);
+    border-color: var(--ap-blue-bright);
+  }
+
+  .form-control,
+  .form-select {
+    border-radius: var(--ap-radius-sm);
+    border-color: var(--ap-hairline);
+    font-size: 14px;
+    padding: 9px 13px;
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    border-color: var(--ap-blue);
+    box-shadow: 0 0 0 3px var(--ap-blue-soft);
+  }
+
+  a {
+    color: var(--ap-blue);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  .pagination .page-link {
+    border: 0;
+    border-radius: 8px;
+    color: var(--ap-ink-soft);
+    font-size: 14px;
+  }
+
+  .pagination .page-item.active .page-link {
+    background: var(--ap-blue);
+    color: #fff;
+  }
+
+  @media (max-width: 992px) {
+    .ap-shell {
+      flex-direction: column;
+    }
+
+    .ap-side {
+      width: 100%;
+      position: static;
+      max-height: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 12px 16px;
+    }
+
+    .ap-nav-group {
+      margin-bottom: 0;
+    }
+
+    .ap-main {
+      width: 100%;
+      padding: 24px 16px 64px;
+    }
+
+    .ap-brand {
+      width: auto;
+    }
+
+    .ap-who,
+    .ap-context-name {
+      display: none;
+    }
+  }
+
+  .card:has(#dropdownMenuButton:disabled) .dropdown:has(#dropdownMenuButton) {
+    visibility: hidden;
+  }
+
+  .card:has(#dropdownMenuButton:disabled) table tr > :first-child {
+    display: none;
+  }
+
+  .ap-toasts {
+    position: fixed;
+    top: 68px;
+    right: 16px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 380px;
+    pointer-events: none;
+  }
+
+  .ap-toast {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 260px;
+    padding: 11px 14px;
+    overflow: hidden;
+    border-radius: var(--ap-radius-sm);
+    color: #fff;
+    font-size: 13.5px;
+    line-height: 1.45;
+    box-shadow: 0 6px 20px rgba(16, 24, 40, .18);
+    pointer-events: auto;
+    animation: ap-toast-enter .2s ease-out;
+  }
+
+  .ap-toast-leaving {
+    animation: ap-toast-exit .2s ease-in forwards;
+  }
+
+  .ap-toast-info {
+    background: #337ab7;
+  }
+
+  .ap-toast-success {
+    background: #5cb85c;
+  }
+
+  .ap-toast-warning {
+    background: #f0ad4e;
+  }
+
+  .ap-toast-error {
+    background: #d9534f;
+  }
+
+  .ap-toast-icon {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 1px;
+  }
+
+  .ap-toast-message {
+    flex: 1;
+    word-break: break-word;
+  }
+
+  .ap-toast-close {
+    flex: none;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 17px;
+    line-height: 1;
+    opacity: .8;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .ap-toast-close:hover {
+    opacity: 1;
+  }
+
+  .ap-toast-progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 100%;
+    background: rgba(255, 255, 255, .7);
+    transform-origin: left;
+    animation: ap-toast-progress linear forwards;
+  }
+
+  .ap-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(16, 24, 40, .45);
+    animation: ap-fade .15s ease-out;
+  }
+
+  .ap-confirm {
+    width: 100%;
+    max-width: 420px;
+    padding: 22px 24px;
+    background: var(--ap-surface);
+    border-radius: var(--ap-radius);
+    box-shadow: 0 20px 50px rgba(16, 24, 40, .25);
+    animation: ap-toast-enter .18s ease-out;
+  }
+
+  .ap-confirm-title {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .ap-confirm-message {
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ap-ink-soft);
+  }
+
+  .ap-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .ap-confirm-btn {
+    padding: 7px 16px;
+    border: 1px solid var(--ap-hairline);
+    border-radius: 999px;
+    background: var(--ap-surface);
+    color: var(--ap-ink);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .ap-confirm-btn.is-primary {
+    background: var(--ap-blue);
+    border-color: var(--ap-blue);
+    color: #fff;
+  }
+
+  .ap-confirm-btn.is-danger {
+    background: #d64545;
+    border-color: #d64545;
+    color: #fff;
+  }
+
+  #modal-delete .modal-dialog {
+    max-width: 420px;
+  }
+
+  .modal-content.ap-confirm {
+    border: none;
+    animation: none;
+  }
+
+  @keyframes ap-toast-enter {
+    from { opacity: 0; transform: scale(.94); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes ap-toast-exit {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(.94); }
+  }
+
+  @keyframes ap-toast-progress {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+  }
+
+  @keyframes ap-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+{% block topbar %}
+{% set env = admin_environment() %}
+{% set who = admin_identity(request) %}
+{% set creatables = admin_creatables(request) %}
+{% set show_switcher = i18n_config.language_switcher and i18n_config.language_switcher | length > 1 %}
+<header class="ap-chrome{% if env.danger %} is-danger{% endif %}">
+  <a class="ap-brand" href="{{ url_for('admin:index') }}">
+    {% if admin.favicon_url %}<img class="ap-brand-mark" src="{{ admin.favicon_url }}" alt="">{% endif %}
+    <span>{{ admin.title }}</span>
+  </a>
+  {% if env.name %}<span class="ap-env">{{ env.name }}</span>{% endif %}
+  <div class="ap-context">
+    {% block context_actions %}{% endblock %}
+  </div>
+  <div class="ap-chrome-end">
+    {% if creatables %}
+    <div class="dropdown">
+      <a href="#" class="ap-chip is-primary dropdown-toggle" data-bs-toggle="dropdown" role="button"
+        aria-expanded="false">
+        <i class="fa fa-plus"></i><span>New</span>
+      </a>
+      <div class="dropdown-menu dropdown-menu-end ap-menu">
+        {% for item in creatables %}
+        <a class="dropdown-item ap-menu-item" href="{{ item.url }}">
+          {% if item.icon %}<i class="{{ item.icon }} ap-menu-icon"></i>{% endif %}
+          <span>{{ item.label }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if show_switcher %}
+    <div class="dropdown">
+      <a href="#" class="ap-chip dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false"
+        title="{{ _('Language') }}">
+        <i class="fa fa-language"></i><span>{{ get_locale_display_name(get_locale()) }}</span>
+      </a>
+      <div class="dropdown-menu dropdown-menu-end ap-menu">
+        {% for code in i18n_config.language_switcher %}
+        <a class="dropdown-item ap-menu-item" href="{{ request.url.include_query_params(lang=code) }}">
+          {{ get_locale_display_name(code) }}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if who.email %}
+    <span class="ap-who">
+      <span>{{ who.email }}</span>
+      <span class="ap-role">{{ who.role }}</span>
+    </span>
+    {% endif %}
+    {% if admin.authentication_backend %}
+    <a href="{{ request.url_for('admin:logout') }}" class="ap-chip" title="{{ _('Logout') }}">
+      <i class="fa fa-sign-out"></i><span>{{ _("Logout") }}</span>
+    </a>
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+
+<div class="ap-shell">
+  <aside class="ap-side">
+    <div class="ap-nav-group">
+      <a class="ap-nav-row {% if request.url.path.rstrip('/') == admin.base_url.rstrip('/') %}is-active{% endif %}"
+        href="{{ url_for('admin:index') }}">
+        <i class="fa-solid fa-gauge ap-nav-icon"></i><span>Overview</span>
+      </a>
+    </div>
+    {% for item in admin._menu.items %}
+    {% if item.type_ == "Category" %}
+    {{ nav_group(item, request) }}
+    {% elif item.is_visible(request) and item.is_accessible(request) %}
+    <div class="ap-nav-group">{{ nav_row(item, request) }}</div>
+    {% endif %}
+    {% endfor %}
+  </aside>
+
+  <main class="ap-main">
+    <div class="ap-page-header">
+      {% block content_header %}
+      <h1 class="ap-page-title">{{ title }}</h1>
+      {% if subtitle %}<div class="ap-page-subtitle">{{ subtitle }}</div>{% endif %}
+      {% endblock %}
+    </div>
+    <div class="row">
+      {% block content %}{% endblock %}
+      {% block flash %}
+      {% set flashes = [] %}
+      {% if request.query_params.get('notice') %}
+      {% set _ = flashes.append({"kind": request.query_params.get('notice_kind', 'info'), "message": request.query_params.get('notice')}) %}
+      {% endif %}
+      {% for flashed in get_flashed_messages(request) %}
+      {% set _ = flashes.append({"kind": {"danger": "error", "primary": "info"}.get(flashed.category, flashed.category), "message": ((flashed.title ~ ": ") if flashed.title else "") ~ flashed.message}) %}
+      {% endfor %}
+      <script type="application/json" id="ap-flash">{{ flashes | tojson }}</script>
+      {% endblock %}
+      {% block secret_modal %}
+      {% include 'sqladmin/secret_modal.html' %}
+      {% endblock %}
+    </div>
+  </main>
+</div>
+
+<script>
+  (() => {
+    const KINDS = new Set(["success", "error", "info", "warning"]);
+    const GLYPHS = { success: "\u2713", error: "!", warning: "!", info: "i" };
+
+    const stack = () => {
+      let holder = document.querySelector(".ap-toasts");
+      if (!holder) {
+        holder = document.createElement("div");
+        holder.className = "ap-toasts";
+        holder.setAttribute("aria-live", "polite");
+        document.body.appendChild(holder);
+      }
+      return holder;
+    };
+
+    window.apToast = (message, kind = "info", options = {}) => {
+      const tone = KINDS.has(kind) ? kind : "info";
+      const sticky = options.sticky ?? tone === "error";
+      const duration = options.duration ?? 4000;
+      const toast = document.createElement("div");
+      toast.className = `ap-toast ap-toast-${tone}`;
+      toast.setAttribute("role", tone === "error" ? "alert" : "status");
+      const icon = document.createElement("span");
+      icon.className = "ap-toast-icon";
+      icon.textContent = GLYPHS[tone];
+      const text = document.createElement("span");
+      text.className = "ap-toast-message";
+      text.textContent = message;
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "ap-toast-close";
+      close.setAttribute("aria-label", "Dismiss");
+      close.textContent = "\u00d7";
+      toast.append(icon, text, close);
+      const leave = () => {
+        if (toast.classList.contains("ap-toast-leaving")) return;
+        toast.classList.add("ap-toast-leaving");
+        toast.addEventListener("animationend", () => toast.remove(), { once: true });
+      };
+      close.addEventListener("click", leave);
+      if (!sticky) {
+        const bar = document.createElement("span");
+        bar.className = "ap-toast-progress";
+        bar.style.animationDuration = `${duration}ms`;
+        toast.appendChild(bar);
+        setTimeout(leave, duration);
+      }
+      stack().appendChild(toast);
+      return toast;
+    };
+
+    window.apConfirm = ({
+      title = "Are you sure?",
+      message = "",
+      confirmLabel = "Confirm",
+      cancelLabel = "Cancel",
+      danger = false,
+    } = {}) =>
+      new Promise((resolve) => {
+        const previous = document.activeElement;
+        const overlay = document.createElement("div");
+        overlay.className = "ap-confirm-overlay";
+        const dialog = document.createElement("div");
+        dialog.className = "ap-confirm";
+        dialog.setAttribute("role", "dialog");
+        dialog.setAttribute("aria-modal", "true");
+        dialog.setAttribute("aria-labelledby", "ap-confirm-title");
+        const heading = document.createElement("h2");
+        heading.className = "ap-confirm-title";
+        heading.id = "ap-confirm-title";
+        heading.textContent = title;
+        const body = document.createElement("p");
+        body.className = "ap-confirm-message";
+        body.textContent = message;
+        const actions = document.createElement("div");
+        actions.className = "ap-confirm-actions";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "ap-confirm-btn";
+        cancel.textContent = cancelLabel;
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = `ap-confirm-btn ${danger ? "is-danger" : "is-primary"}`;
+        accept.textContent = confirmLabel;
+        actions.append(cancel, accept);
+        dialog.append(heading, body, actions);
+        overlay.appendChild(dialog);
+        const onKey = (event) => {
+          if (event.key === "Escape") finish(false);
+        };
+        const finish = (answer) => {
+          document.removeEventListener("keydown", onKey);
+          overlay.remove();
+          if (previous && previous.focus) previous.focus();
+          resolve(answer);
+        };
+        cancel.addEventListener("click", () => finish(false));
+        accept.addEventListener("click", () => finish(true));
+        overlay.addEventListener("click", (event) => {
+          if (event.target === overlay) finish(false);
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.appendChild(overlay);
+        (danger ? cancel : accept).focus();
+      });
+
+    window.alert = (message) => {
+      let text = String(message ?? "");
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed.detail === "string") text = parsed.detail;
+      } catch (error) {
+        text = text.trim();
+      }
+      window.apToast(text || "Something went wrong.", "error");
+    };
+
+    document.addEventListener("click", async (event) => {
+      const trigger = event.target.closest("[data-confirm]");
+      if (!trigger || trigger.disabled) return;
+      event.preventDefault();
+      const agreed = await window.apConfirm({
+        title: trigger.dataset.confirmTitle || "Are you sure?",
+        message: trigger.dataset.confirm,
+        confirmLabel: trigger.dataset.confirmLabel || trigger.textContent.trim(),
+        danger: trigger.hasAttribute("data-danger"),
+      });
+      if (!agreed) return;
+      if (trigger.form) {
+        trigger.form.requestSubmit(trigger);
+      } else if (trigger.href) {
+        window.location.href = trigger.href;
+      }
+    });
+
+    document.addEventListener("change", (event) => {
+      const all = event.target.closest("[data-select-all]");
+      if (!all) return;
+      const selector = `input[name="${CSS.escape(all.dataset.selectAll)}"]`;
+      for (const box of (all.closest("form") || document).querySelectorAll(selector)) {
+        const row = box.closest("tr");
+        if (!row || !row.hidden) box.checked = all.checked;
+      }
+      countTicked();
+    });
+
+    const countTicked = () => {
+      for (const label of document.querySelectorAll("[data-ticked-count]")) {
+        const form = label.closest("form");
+        const ticked = form ? form.querySelectorAll('input[name="row_ids"]:checked').length : 0;
+        label.textContent = ticked ? `${ticked} ticked` : "";
+      }
+    };
+
+    document.addEventListener("change", (event) => {
+      if (event.target.matches('input[name="row_ids"]')) countTicked();
+    });
+
+    const ROW_BOX = 'td:first-child input[type="checkbox"]';
+    let lastTicked = null;
+
+    document.addEventListener("mousedown", (event) => {
+      if (event.shiftKey && event.target.closest(`tbody ${ROW_BOX}`)) event.preventDefault();
+    });
+
+    document.addEventListener("click", (event) => {
+      const box = event.target.closest(`tbody ${ROW_BOX}`);
+      if (!box) return;
+      const body = box.closest("tbody");
+      if (event.shiftKey && lastTicked && lastTicked !== box && lastTicked.closest("tbody") === body) {
+        const boxes = [...body.querySelectorAll(ROW_BOX)];
+        const from = boxes.indexOf(lastTicked);
+        const to = boxes.indexOf(box);
+        for (const other of boxes.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+          if (!other.closest("tr").hidden) other.checked = box.checked;
+        }
+        countTicked();
+      }
+      lastTicked = box;
+    });
+
+    let liveSearchTimer = null;
+    document.addEventListener("input", (event) => {
+      const field = event.target.closest("[data-live-filter]");
+      if (!field) return;
+      const wanted = field.value.trim().toLowerCase();
+      const card = field.closest(".card") || document;
+      let shown = 0;
+      for (const row of card.querySelectorAll("tr[data-filter-text]")) {
+        row.hidden = wanted !== "" && !row.dataset.filterText.includes(wanted);
+        if (!row.hidden) shown += 1;
+      }
+      const count = card.querySelector("[data-live-count]");
+      if (count) count.textContent = `${shown} shown`;
+      if (field.dataset.truncated === "1") {
+        clearTimeout(liveSearchTimer);
+        liveSearchTimer = setTimeout(() => field.form.requestSubmit(), 500);
+      }
+    });
+
+    for (const field of document.querySelectorAll("[data-live-filter]")) {
+      if (field.value) {
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+      }
+    }
+
+    const showFlashes = () => {
+      const source = document.getElementById("ap-flash");
+      let items = [];
+      try {
+        items = JSON.parse((source && source.textContent) || "[]");
+      } catch (error) {
+        items = [];
+      }
+      for (const item of items) {
+        if (item && item.message) window.apToast(item.message, item.kind);
+      }
+      for (const banner of document.querySelectorAll('main .alert.alert-danger[role="alert"]')) {
+        const text = banner.textContent.trim().replace(/^\d{3}:\s*/, "");
+        if (text) window.apToast(text, "error");
+        banner.remove();
+      }
+      const url = new URL(window.location.href);
+      const shown = ["notice", "notice_kind", "error"].filter((key) => url.searchParams.has(key));
+      if (shown.length) {
+        for (const key of shown) url.searchParams.delete(key);
+        window.history.replaceState(null, "", url);
+      }
+    };
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", showFlashes);
+    } else {
+      showFlashes();
+    }
+  })();
+</script>
 {% endblock %}

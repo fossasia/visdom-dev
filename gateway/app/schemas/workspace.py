@@ -38,6 +38,7 @@ class MyWorkspaceResponse(WorkspaceResponse):
     their membership-specific role and starred flag alongside the workspace."""
     role: str
     starred: bool
+    is_active: bool = True
 
 
 class StarredUpdate(BaseModel):

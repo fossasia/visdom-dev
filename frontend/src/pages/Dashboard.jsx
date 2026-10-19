@@ -11,6 +11,7 @@ import BillingTab from '../components/workspace/BillingTab';
 import UsageTab from '../components/workspace/UsageTab';
 import PendingInvitesBanner from '../components/workspace/PendingInvitesBanner';
 import RetentionBanner from '../components/workspace/RetentionBanner';
+import SuspendedBanner from '../components/workspace/SuspendedBanner';
 import ProfileModal from '../components/ProfileModal';
 import { readScoped, writeScoped } from '../utils/storage';
 import { cachedGet, invalidate } from '../utils/requestCache';
@@ -135,6 +136,7 @@ fetchWorkspaces();
   };
 
   const needsWorkspace = WORKSPACE_SCOPED_TABS.has(activeTab) && !activeWorkspace;
+  const canVisualize = Boolean(activeWorkspace) && activeWorkspace.is_active !== false;
 
   return (
     <div className="gc-shell">
@@ -172,15 +174,17 @@ fetchWorkspaces();
 
           <a
             className="gc-tab gc-tab-viz"
-            href={activeWorkspace ? `/vis/w/${activeWorkspace.slug}/` : undefined}
-            aria-disabled={!activeWorkspace}
+            href={canVisualize ? `/vis/w/${activeWorkspace.slug}/` : undefined}
+            aria-disabled={!canVisualize}
             onClick={(e) => {
-              if (!activeWorkspace) e.preventDefault();
+              if (!canVisualize) e.preventDefault();
             }}
             title={
-              activeWorkspace
+              canVisualize
                 ? `Open ${activeWorkspace.name}'s visualizations`
-                : 'Select a workspace to open its visualizations'
+                : activeWorkspace
+                  ? `${activeWorkspace.name} is suspended`
+                  : 'Select a workspace to open its visualizations'
             }
           >
             <LineChart size={15} />
@@ -215,6 +219,7 @@ fetchWorkspaces();
           onDeclined={handleInviteDeclined}
         />
 
+        <SuspendedBanner workspace={activeWorkspace} />
         {activeTab !== 'workspaces' && <RetentionBanner workspace={activeWorkspace} notice={retention} />}
 
         {needsWorkspace ? (

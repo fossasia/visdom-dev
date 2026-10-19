@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Visdom">
+  <defs>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="128" height="128" rx="30" ry="30" />
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="128" height="128" fill="#2f6ef0" />
+    <path fill="#4d8bf5" d="M0 44 C 16 34, 26 52, 40 47 C 54 42, 62 62, 78 58 C 94 54, 108 40, 128 46 L128 128 L0 128 Z" />
+    <path fill="#5f9bf7" d="M0 64 C 14 58, 24 74, 38 70 C 54 65, 66 82, 82 76 C 98 70, 112 62, 128 68 L128 128 L0 128 Z" />
+    <path fill="#7fb2f9" d="M0 84 C 18 78, 28 92, 44 88 C 60 84, 70 96, 86 92 C 102 88, 114 82, 128 86 L128 128 L0 128 Z" />
+    <path fill="#9cc6fb" d="M0 104 C 16 99, 30 110, 46 106 C 62 102, 74 112, 90 108 C 106 104, 116 100, 128 103 L128 128 L0 128 Z" />
+  </g>
+</svg>
