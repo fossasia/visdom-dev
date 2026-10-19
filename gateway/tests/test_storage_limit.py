@@ -1,7 +1,8 @@
 # Copyright 2017-present, The Visdom Authors
 """New plots are refused once a workspace owner's plan is out of storage.
 
-Only the write path is refused. Reading, and deleting through the browser, keep
+The gateway answers every sign-in as before and says the workspace is full;
+visdom then refuses only the requests that add data. Reading and deleting keep
 working, which is how an account gets back under the limit. The limit is the
 owner's, since the owner's plan is the one paying.
 """
@@ -57,6 +58,12 @@ def _write(client, key, workspace):
     )
 
 
+def _full(client, key, workspace):
+    answer = _write(client, key, workspace)
+    assert answer.status_code == 200, answer.text
+    return answer.json()["storage_full"]
+
+
 def test_writes_go_through_under_the_limit(client, make_user, make_workspace, db_session):
     owner = make_user()
     ws = make_workspace(owner)
@@ -64,7 +71,7 @@ def test_writes_go_through_under_the_limit(client, make_user, make_workspace, db
     _on_plan(db_session, owner, "free")
     _stored(db_session, ws, FREE_LIMIT - 1)
 
-    assert _write(client, key, ws).status_code == 200
+    assert _full(client, key, ws) is None
 
 
 def test_writes_are_refused_at_the_limit_and_say_why(client, make_user, make_workspace, db_session):
@@ -74,10 +81,9 @@ def test_writes_are_refused_at_the_limit_and_say_why(client, make_user, make_wor
     _on_plan(db_session, owner, "free")
     _stored(db_session, ws, FREE_LIMIT)
 
-    refused = _write(client, key, ws)
-    assert refused.status_code == 402
-    assert "storage" in refused.json()["detail"]
-    assert "deleting old environments" in refused.json()["detail"]
+    refused = _full(client, key, ws)
+    assert "storage" in refused
+    assert "deleting old environments" in refused
 
 
 def test_space_freed_within_the_hour_lets_writes_through(
@@ -88,13 +94,13 @@ def test_space_freed_within_the_hour_lets_writes_through(
     key = _write_key(client, owner, ws)
     _on_plan(db_session, owner, "free")
     _stored(db_session, ws, FREE_LIMIT)
-    assert _write(client, key, ws).status_code == 402
+    assert _full(client, key, ws)
 
     row = db_session.query(WorkspaceUsageHour).one()
     row.current_bytes = FREE_LIMIT // 2
     db_session.commit()
 
-    assert _write(client, key, ws).status_code == 200
+    assert _full(client, key, ws) is None
 
 
 def test_viewing_still_works_over_the_limit(client, make_user, make_workspace, db_session):
@@ -108,6 +114,7 @@ def test_viewing_still_works_over_the_limit(client, make_user, make_workspace, d
         RESOLVE_SESSION, json={"workspace_slug": ws["slug"]}, headers=owner["headers"]
     )
     assert viewed.status_code == 200
+    assert "storage" in viewed.json()["storage_full"]
 
 
 def test_an_unlimited_plan_is_never_refused(client, make_user, make_workspace, db_session):
@@ -117,7 +124,7 @@ def test_an_unlimited_plan_is_never_refused(client, make_user, make_workspace, d
     _on_plan(db_session, owner, "enterprise")
     _stored(db_session, ws, FREE_LIMIT * 50)
 
-    assert _write(client, key, ws).status_code == 200
+    assert _full(client, key, ws) is None
 
 
 def test_storage_adds_up_across_the_owners_workspaces(client, make_user, make_workspace, db_session):
@@ -130,7 +137,7 @@ def test_storage_adds_up_across_the_owners_workspaces(client, make_user, make_wo
     _stored(db_session, first, FREE_LIMIT // 2 + 1)
     _stored(db_session, second, FREE_LIMIT // 2)
 
-    assert _write(client, key, first).status_code == 402
+    assert _full(client, key, first)
 
 
 def test_a_member_is_held_to_the_owners_plan_not_their_own(
@@ -146,7 +153,7 @@ def test_a_member_is_held_to_the_owners_plan_not_their_own(
     _on_plan(db_session, member, "enterprise")
     _stored(db_session, ws, FREE_LIMIT)
 
-    assert _write(client, key, ws).status_code == 402
+    assert _full(client, key, ws)
 
 
 PRO_WORKSPACE_LIMIT = 5120 * MEGABYTE
@@ -162,10 +169,9 @@ def test_one_workspace_cannot_take_the_whole_allowance(client, make_user, make_w
     _on_plan(db_session, owner, "pro")
     _stored(db_session, full, PRO_WORKSPACE_LIMIT)
 
-    refused = _write(client, full_key, full)
-    assert refused.status_code == 402
-    assert "one workspace" in refused.json()["detail"]
-    assert _write(client, other_key, other).status_code == 200
+    refused = _full(client, full_key, full)
+    assert "one workspace" in refused
+    assert _full(client, other_key, other) is None
 
 
 def test_a_plan_without_a_workspace_cap_falls_back_to_the_total(client, make_user, make_workspace, db_session):
@@ -180,7 +186,7 @@ def test_a_plan_without_a_workspace_cap_falls_back_to_the_total(client, make_use
     db_session.commit()
     _stored(db_session, ws, PRO_WORKSPACE_LIMIT * 3 // 2)
 
-    assert _write(client, key, ws).status_code == 200
+    assert _full(client, key, ws) is None
 
 
 def test_a_trashed_workspace_still_counts_until_it_is_purged(client, make_user, make_workspace, db_session):
@@ -197,7 +203,7 @@ def test_a_trashed_workspace_still_counts_until_it_is_purged(client, make_user, 
     row.trashed_at = datetime.datetime.now(datetime.timezone.utc)
     db_session.commit()
 
-    assert _write(client, key, live).status_code == 402
+    assert _full(client, key, live)
 
 
 def test_the_usage_page_shows_the_workspace_cap(client, make_user, make_workspace, db_session):

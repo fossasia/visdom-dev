@@ -5,6 +5,8 @@ a caller + workspace slug to a workspace id and the caller's role. Two callers:
 the programmatic write path (API key) and the browser read path (session token).
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ from app.dependencies import (
     get_db,
 )
 from app.models import APIKey, Membership, User, Workspace
-from app.usage import refuse_writes_over_storage
+from app.usage import storage_refusal
 
 router = APIRouter(prefix="/visdom", tags=["visdom"])
 
@@ -29,6 +31,7 @@ class VisdomResolveResponse(BaseModel):
     workspace_id: str
     role: str
     allowed: bool
+    storage_full: Optional[str] = None
 
 
 def _lookup_workspace(db: Session, workspace_slug: str) -> Workspace:
@@ -67,14 +70,18 @@ def resolve_workspace(
     """
     Write path (python client). Resolves an API key + workspace slug to that
     workspace's id and the key owner's role, validating the key's workspace-scope
-    binding and active membership. The role lets visdom map viewer to read-only.
+    binding and active membership. The role lets visdom map viewer to read-only,
+    and ``storage_full`` says why new plots are refused once the owner's plan is
+    out of storage.
     """
     workspace = _lookup_workspace(db, payload.workspace_slug)
     enforce_api_key_workspace_scope(db, key_record, workspace.id)
     role = _active_membership_role(db, workspace.id, key_record.user_id)
-    refuse_writes_over_storage(db, workspace)
     return VisdomResolveResponse(
-        workspace_id=str(workspace.id), role=role, allowed=True
+        workspace_id=str(workspace.id),
+        role=role,
+        allowed=True,
+        storage_full=storage_refusal(db, workspace),
     )
 
 
@@ -87,10 +94,14 @@ def resolve_session(
     """
     Browser read path. Resolves a logged-in user (from the session access token,
     which visdom forwards as a bearer token) + workspace slug to that workspace's
-    id and the user's role, requiring active membership.
+    id and the user's role, requiring active membership. ``storage_full`` is
+    answered here too, so that space freed from the browser lifts the refusal.
     """
     workspace = _lookup_workspace(db, payload.workspace_slug)
     role = _active_membership_role(db, workspace.id, current_user.id)
     return VisdomResolveResponse(
-        workspace_id=str(workspace.id), role=role, allowed=True
+        workspace_id=str(workspace.id),
+        role=role,
+        allowed=True,
+        storage_full=storage_refusal(db, workspace),
     )
