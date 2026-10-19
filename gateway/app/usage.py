@@ -240,42 +240,35 @@ def workspace_storage_limit(db: Session, workspace: Workspace) -> int | None:
     return None if limit_mb is None else limit_mb * MEGABYTE
 
 
-def refuse_writes_over_storage(db: Session, workspace: Workspace) -> None:
-    """Stop new plots once the workspace, or its owner's plan, is out of storage.
+def storage_refusal(db: Session, workspace: Workspace) -> str | None:
+    """Why new plots are refused here, or ``None`` while there is room.
 
     Two ceilings: what any one workspace may hold, and what all of the owner's
     workspaces may hold together. The first is what stops one busy workspace
     taking the whole allowance, or the whole disk on a plan with no total.
 
     The owner's plan is the one that pays, so a member writing into someone
-    else's workspace is held to the owner's limit, not their own. Only writes
-    are refused: reading and deleting still work, which is how an account gets
-    back under the limit.
+    else's workspace is held to the owner's limit, not their own. The gateway
+    only says so: visdom refuses the requests that add data, and keeps serving
+    reads and deletions, which is how an account gets back under the limit.
     """
     owner = workspace.creator
     if owner is None:
-        return
+        return None
     ceiling = workspace_storage_limit(db, workspace)
     if ceiling is not None and latest_storage(db, [workspace.id]).get(workspace.id, 0) >= ceiling:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"This workspace has used all {ceiling // MEGABYTE:,} MB of storage one "
-                f"workspace may hold on the {owner.tier} plan, so new plots are refused. "
-                "Viewing still works; deleting old environments frees space."
-            ),
+        return (
+            f"This workspace has used all {ceiling // MEGABYTE:,} MB of storage one "
+            f"workspace may hold on the {owner.tier} plan, so new plots are refused. "
+            "Viewing still works; deleting old environments frees space."
         )
     limit_mb = limit_for(db, owner.tier, "storage_mb")
     if limit_mb is None:
-        return
-    used = storage_used(db, owner)
-    if used < limit_mb * MEGABYTE:
-        return
-    raise HTTPException(
-        status_code=status.HTTP_402_PAYMENT_REQUIRED,
-        detail=(
-            f"This workspace's owner has used all {limit_mb:,} MB of storage on the "
-            f"{owner.tier} plan, so new plots are refused. Viewing still works; "
-            "deleting old environments frees space."
-        ),
+        return None
+    if storage_used(db, owner) < limit_mb * MEGABYTE:
+        return None
+    return (
+        f"This workspace's owner has used all {limit_mb:,} MB of storage on the "
+        f"{owner.tier} plan, so new plots are refused. Viewing still works; "
+        "deleting old environments frees space."
     )
