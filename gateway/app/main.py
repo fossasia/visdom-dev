@@ -41,27 +41,23 @@ async def _sweep_retention_forever(hours: int) -> None:
 
     Slow because nothing here is urgent: a plan that keeps seven days is not
     broken by keeping seven days and an hour. One worker does it, the same way
-    the usage tick does, since several workers sweeping the same workspaces at
-    once would each ask every instance for the same answer.
+    the usage tick does, though under a lock of its own, since several workers
+    sweeping the same workspaces at once would each ask every instance for the
+    same answer.
     """
     while True:
         await asyncio.sleep(hours * 3600)
-        db = SessionLocal()
         try:
-            if usage_rollup.take_tick(db):
-                summary = await asyncio.to_thread(retention.sweep, db)
-                if summary["with_expired"]:
-                    logging.info(
-                        "retention swept %d workspace(s), removed %d env(s)%s",
-                        summary["with_expired"],
-                        summary["removed"],
-                        "" if retention.enforcing() else " (reporting only)",
-                    )
+            summary = await asyncio.to_thread(retention.sweep_once)
+            if summary and summary["with_expired"]:
+                logging.info(
+                    "retention swept %d workspace(s), removed %d env(s)%s",
+                    summary["with_expired"],
+                    summary["removed"],
+                    "" if retention.enforcing() else " (reporting only)",
+                )
         except Exception:
             logging.exception("retention sweep failed")
-            db.rollback()
-        finally:
-            db.close()
 
 
 async def _delete_accounts_forever(hours: int) -> None:

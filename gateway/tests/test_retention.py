@@ -243,3 +243,25 @@ def test_members_can_read_the_notice_and_others_cannot(client, make_user, make_w
     assert seen.json()["state"] == "forever"
     hidden = client.get(f"/api/v1/workspaces/{workspace['id']}/retention", headers=outsider["headers"])
     assert hidden.status_code == 404
+
+
+def test_no_transaction_is_open_while_an_instance_is_asked(db_session, instances):
+    _workspace(db_session, _owner(db_session, "free"), slug="slow-instance")
+    open_while_asked = []
+
+    def ask(address, workspace_id, days, dry_run, timeout):
+        open_while_asked.append(db_session.in_transaction())
+        return {"workspace_id": str(workspace_id), "loaded": False, "envs": [], "removed": 0}
+
+    retention.sweep(db_session, enforce=True, ask=ask)
+
+    assert open_while_asked
+    assert not any(open_while_asked)
+
+
+def test_a_sweep_runs_without_the_lock_on_a_database_that_has_none(monkeypatch, db_session):
+    monkeypatch.setattr(retention, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(retention, "instance_addresses", lambda: [])
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    assert retention.sweep_once()["visited"] == 0
