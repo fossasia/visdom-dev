@@ -314,6 +314,12 @@ fetchSuggestion();
             Sign in
           </Link>
         </div>
+
+        <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          <Link to={`/privacy${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--text-muted)' }}>Privacy</Link>
+          {' · '}
+          <Link to={`/cookies${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--text-muted)' }}>Cookies</Link>
+        </div>
       </div>
     </div>
   );

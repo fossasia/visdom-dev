@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const LABEL = { display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' };
 const BUTTON = { width: '100%', height: '32px', backgroundColor: '#3b5998', color: '#ffffff', borderColor: '#2f477a', marginTop: '6px' };
@@ -19,8 +19,8 @@ export const AuthNote = ({ children }) => <div style={NOTE}>{children}</div>;
 
 const LINK = { color: '#3b5998', textDecoration: 'none', fontWeight: '600' };
 
-export const AuthLink = ({ to, href, children }) =>
-  href ? <a href={href} style={LINK}>{children}</a> : <Link to={to} style={LINK}>{children}</Link>;
+export const AuthLink = ({ to, href, state, children }) =>
+  href ? <a href={href} style={LINK}>{children}</a> : <Link to={to} state={state} style={LINK}>{children}</Link>;
 
 export const AuthTextButton = ({ onClick, children }) => (
   <button
@@ -32,19 +32,31 @@ export const AuthTextButton = ({ onClick, children }) => (
   </button>
 );
 
-const AuthShell = ({ subtitle, children }) => (
-  <div className="auth-wrapper">
-    <div className="visdom-panel auth-panel">
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <h2 className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-          <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
-          <span>visdom</span>
-        </h2>
-        <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{subtitle}</div>
+const FOOTER = { textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--vc-text-muted)' };
+
+const AuthShell = ({ subtitle, children }) => {
+  const location = useLocation();
+  const kept = { from: location.state?.from };
+
+  return (
+    <div className="auth-wrapper">
+      <div className="visdom-panel auth-panel">
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <h2 className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
+            <span>visdom</span>
+          </h2>
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{subtitle}</div>
+        </div>
+        {children}
+        <div style={FOOTER}>
+          <AuthLink to={`/privacy${location.search}`} state={kept}>Privacy</AuthLink>
+          {' · '}
+          <AuthLink to={`/cookies${location.search}`} state={kept}>Cookies</AuthLink>
+        </div>
       </div>
-      {children}
     </div>
-  </div>
-);
+  );
+};
 
 export default AuthShell;

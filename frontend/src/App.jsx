@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import LegalPage from './pages/LegalPage';
+import { COOKIES, PRIVACY } from './content/legal';
 import Dashboard from './pages/Dashboard';
 import JoinWorkspace from './pages/JoinWorkspace';
 
@@ -16,6 +18,8 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/privacy" element={<LegalPage title="Privacy" sections={PRIVACY} />} />
+        <Route path="/cookies" element={<LegalPage title="Cookies" sections={COOKIES} />} />
         <Route
           path="/"
           element={
