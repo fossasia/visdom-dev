@@ -1,27 +1,122 @@
 {% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Cleanup</h1>
+<div class="ap-page-subtitle">Leftovers worth a look. Nothing here is removed automatically.</div>
+{% endblock %}
+
 {% block content %}
-<div class="col-12 d-block">
-  {% for section in janitor_findings() %}
-  <div class="card mb-3">
-    <div class="card-header d-flex align-items-center">
-      <h3 class="card-title mb-0">{{ section.title }}</h3>
-      <span class="badge ms-2 {% if section.rows %}bg-orange{% else %}bg-green{% endif %}">
-        {{ section.rows | length }}
-      </span>
-    </div>
-    <div class="card-body">
-      <p class="text-secondary">{{ section.note }}</p>
+<style>
+  .ap-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+
+  .ap-section {
+    background: var(--ap-surface);
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius);
+    box-shadow: var(--ap-shadow);
+    overflow: hidden;
+  }
+
+  .ap-section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 20px 0;
+  }
+
+  .ap-section-name {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 0;
+  }
+
+  .ap-count {
+    margin-left: auto;
+    min-width: 26px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 980px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ap-count.is-flagged {
+    background: rgba(180, 105, 14, .12);
+    color: #b4690e;
+  }
+
+  .ap-count.is-clear {
+    background: rgba(23, 128, 82, .1);
+    color: #178052;
+  }
+
+  .ap-section-note {
+    padding: 8px 20px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ap-ink-soft);
+    margin: 0;
+  }
+
+  .ap-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--ap-hairline);
+  }
+
+  .ap-rows li {
+    padding: 12px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--ap-hairline);
+    word-break: break-word;
+  }
+
+  .ap-rows li:last-child {
+    border-bottom: 0;
+  }
+
+  .ap-empty {
+    padding: 0 20px 20px;
+    font-size: 14px;
+    color: var(--ap-ink-soft);
+  }
+
+
+
+
+
+</style>
+
+<div class="col-12">
+  <div class="ap-sections">
+    {% for section in janitor_findings() %}
+    <div class="ap-section">
+      <div class="ap-section-head">
+        <h2 class="ap-section-name">{{ section.title }}</h2>
+        <span class="ap-count {% if section.rows %}is-flagged{% else %}is-clear{% endif %}">
+          {{ section.rows | length }}
+        </span>
+      </div>
+      <p class="ap-section-note">{{ section.note }}</p>
       {% if section.rows %}
-      <ul class="list-unstyled mb-0">
+      <ul class="ap-rows">
         {% for row in section.rows %}
-        <li class="border-bottom py-2">{{ row }}</li>
+        <li>{{ row }}</li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="text-secondary mb-0"><em>Nothing to clean up here.</em></p>
+      <div class="ap-empty">Nothing to clean up here.</div>
       {% endif %}
     </div>
+    {% endfor %}
   </div>
-  {% endfor %}
 </div>
 {% endblock %}

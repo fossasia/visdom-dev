@@ -117,6 +117,7 @@ def _to_my_workspace_response(workspace: Workspace, membership: Membership) -> M
         created_by=workspace.created_by,
         role=membership.role,
         starred=bool(membership.starred),
+        is_active=bool(workspace.is_active),
     )
 
 
