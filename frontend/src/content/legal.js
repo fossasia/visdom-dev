@@ -46,7 +46,7 @@ export const PRIVACY = [
     heading: 'How long we keep it',
     body: [
       'Your account details are kept while the account exists.',
-      'Plot data is kept for as long as your plan says, counted from when an environment was last written to. The free plan keeps 7 days and the pro plan keeps 90. Older environments are removed automatically.',
+      'Plot data is kept for at least as long as your plan says, counted from when an environment was last written to. The free plan keeps 7 days and the pro plan keeps 90. After that, older environments may be removed automatically.',
       'Backups are kept for 90 days and then deleted, so data can remain in a backup for up to 90 days after you remove it from the service.',
       'Usage records are kept while the workspace they describe exists, and are deleted with it. Deleting your account deletes your workspaces, so their usage records go too.',
       'Billing records are kept while the account exists and deleted with it. Stripe keeps its own record of payments, as the law requires of a payment provider.',
