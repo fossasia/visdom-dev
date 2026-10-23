@@ -58,7 +58,7 @@ DEFAULT_PLANS = [
     {
         "id": "pro",
         "name": "Pro",
-        "price": 29,
+        "price": 20,
         "sort_order": 1,
         "limits": {
             "workspaces": 10,
@@ -107,6 +107,7 @@ _NO_PLAN = {
     "limits": dict.fromkeys(LIMIT_KEYS, 0),
     "retention_days": 0,
     "features": [],
+    "stripe_price_id": None,
 }
 
 
@@ -177,6 +178,7 @@ def _as_dict(plan: Plan) -> dict:
         "limits": _readable_limits(plan.limits),
         "retention_days": plan.retention_days,
         "features": list(plan.features or []),
+        "stripe_price_id": plan.stripe_price_id,
     }
 
 

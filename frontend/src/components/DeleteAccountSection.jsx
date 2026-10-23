@@ -94,6 +94,11 @@ const DeleteAccountSection = ({ onClose }) => {
             Your account stops working straight away and is removed for good after {preview.grace_days} days.
             Signing in before then cancels it.
           </div>
+          {preview.renewing_plan && (
+            <div className="gc-text-desc-muted gc-mb-1">
+              Your {preview.renewing_plan} plan stops renewing now, so you are not charged again.
+            </div>
+          )}
           {preview.leaving_with.length > 0 && (
             <>
               <div className="gc-text-desc-muted gc-mb-1">
