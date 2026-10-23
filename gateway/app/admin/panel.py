@@ -254,11 +254,7 @@ class UserAdmin(ChangeableView, model=User):
         "tier": {"label": "Plan", "choices": lambda: _tier_choices()},
         "bypass_limits": {
             "label": "Bypass plan limits",
-            "description": (
-                "Superadmins only. Holds this account to no limit at all until it is switched off: "
-                "workspaces, members, API keys, storage and how long work is kept. "
-                "The plan itself is left as it is."
-            ),
+            "description": "Superadmins only. Lifts every plan limit for this account until switched off.",
         },
         "password_hash": {
             "label": "Set a new password",
