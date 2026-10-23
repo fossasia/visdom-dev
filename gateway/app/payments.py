@@ -133,12 +133,13 @@ def _new_customer(v1, user: User):
 def start_checkout(db: Session, user: User, plan: Plan) -> dict:
     customer = customer_for(db, user)
     db.query(User).filter(User.id == user.id).with_for_update().populate_existing().first()
-    held = _call(lambda v1: v1.subscriptions.list(params={"customer": customer, "status": "all", "limit": 20}))
-    live = [_plain(found) for found in held.data if _plain(found).get("status") in LIVE]
-    if live:
-        for found in live:
-            record(db, found)
-        raise AlreadyPaying("You already have a paid plan. Change it from Manage billing.")
+    for status in LIVE:
+        held = _call(
+            lambda v1, wanted=status: v1.subscriptions.list(params={"customer": customer, "status": wanted, "limit": 1})
+        )
+        if held.data:
+            record(db, _plain(held.data[0]))
+            raise AlreadyPaying("You already have a paid plan. Change it from Manage billing.")
     left_open = _call(
         lambda v1: v1.checkout.sessions.list(params={"customer": customer, "status": "open", "limit": 20})
     )

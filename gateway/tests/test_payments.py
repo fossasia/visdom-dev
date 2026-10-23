@@ -99,7 +99,12 @@ class FakeStripe:
             if verb == "retrieve":
                 return Found(self.subscriptions[args])
             if verb == "list":
-                return Found(data=[Found(s) for s in self.subscriptions.values() if s["customer"] == args["customer"]])
+                found = [
+                    Found(s)
+                    for s in self.subscriptions.values()
+                    if s["customer"] == args["customer"] and args.get("status") in ("all", s["status"])
+                ]
+                return Found(data=found[: args.get("limit", 10)])
             if verb == "update":
                 found_id, params = args
                 self.subscriptions[found_id].update(params)
@@ -238,6 +243,20 @@ def test_checkout_is_refused_when_stripe_already_has_a_paid_plan(client, make_us
     assert not [call for call in fake.calls if call[:2] == ("sessions", "create")]
     assert db_session.get(Subscription, "sub_1").status == "active"
     assert _account(db_session, user).tier == "pro"
+
+
+def test_checkout_finds_a_paid_plan_behind_many_ended_ones(client, make_user, fake, db_session):
+    user = make_user()
+    _account(db_session, user).stripe_customer_id = "cus_test_1"
+    db_session.commit()
+    for n in range(25):
+        fake.subscriptions[f"sub_old_{n}"] = _subscription(f"sub_old_{n}", status="canceled")
+    fake.subscriptions["sub_1"] = _subscription(status="past_due")
+
+    refused = client.post(f"{BILLING}/checkout", json={"tier": "pro"}, headers=user["headers"])
+
+    assert refused.status_code == 409
+    assert not [call for call in fake.calls if call[:2] == ("sessions", "create")]
 
 
 def test_checkout_waits_for_a_customer_another_request_is_making(client, make_user, fake, db_session, monkeypatch):
