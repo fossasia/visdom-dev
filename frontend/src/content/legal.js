@@ -2,7 +2,7 @@
 
 export const CONTROLLER = {
   name: 'FOSSASIA PTE. LTD.',
-  address: '12 Eu Tong Sen Street #8-169, Singapore 059819',
+  address: '12 Eu Tong Sen Street #08-169, Singapore 059819',
   email: 'office@fossasia.org',
 };
 
@@ -22,7 +22,7 @@ export const PRIVACY = [
       'Your account: the email address you signed up with, the username shown to people you share a workspace with, and your password. Your password is stored as a hash, which means we cannot read it and cannot tell you what it is.',
       'What you send: the plots, values and text your code writes into your workspaces. We treat this as yours. Nobody outside your workspace sees it, and we do not look through it except when you ask for help with a specific problem.',
       'How much you use: how many minutes a workspace was written to, how many writes it took, and how much disk it holds. We need these to apply the limits of your plan.',
-      'If you buy a paid plan: your card details go straight to Stripe and never reach us. We keep a reference to your Stripe customer and subscription, which plan it is for, whether it is paid up, and when it renews.',
+      'If you buy a paid plan: your payment details, whether a card, a bank account or another method Stripe offers, go straight to Stripe and never reach us. We keep a reference to your Stripe customer and subscription, which plan it is for, whether it is paid up, and when it renews.',
       'Technical records: the address your requests come from, the browser you used, and the time, kept in server logs. Actions taken by our staff in the admin console are recorded with the staff account that took them.',
     ],
   },
@@ -58,7 +58,7 @@ export const PRIVACY = [
     body: [
       'Oracle Cloud Infrastructure hosts the service. Amazon Web Services stores the backups. Cloudflare answers DNS for the visdom.dev name.',
       'When email is switched on, an email provider will deliver messages such as password resets and invitations. This page will name it before that happens.',
-      'Stripe takes payment for paid plans. It receives your email address and the card details you type into its payment form.',
+      'Stripe takes payment for paid plans. It receives your email address and the payment details you enter in its payment form.',
       'None of them are given your data for their own purposes, except that Stripe keeps payment records and checks payments for fraud, as a payment provider must.',
     ],
   },

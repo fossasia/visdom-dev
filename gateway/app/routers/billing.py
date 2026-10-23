@@ -156,6 +156,8 @@ def start_checkout(
         )
     try:
         started = payments.start_checkout(db, current_user, plan)
+    except payments.AlreadyPaying as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except payments.PaymentsDown as exc:
         raise _unreachable(exc) from exc
     return {**started, "publishable_key": settings.STRIPE_PUBLISHABLE_KEY}

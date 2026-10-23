@@ -9,7 +9,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import account_deletion, retention, usage_rollup
+from app import account_deletion, payments, retention, usage_rollup
 from app.admin import mount_admin
 from app.admin.activity import activity_per_instance
 from app.config import settings
@@ -90,6 +90,9 @@ async def lifespan(_app: FastAPI):
     seconds = settings.USAGE_SAMPLE_SECONDS
     hours = settings.RETENTION_SWEEP_HOURS
     tasks = []
+    gap = payments.setup_gap()
+    if gap:
+        logging.warning(gap)
     if seconds > 0:
         tasks.append(asyncio.create_task(_sample_usage_forever(seconds)))
     if hours > 0:

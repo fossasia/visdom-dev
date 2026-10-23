@@ -44,8 +44,18 @@ class PaymentsDown(RuntimeError):
     pass
 
 
+class AlreadyPaying(RuntimeError):
+    pass
+
+
 def enabled() -> bool:
     return bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_PUBLISHABLE_KEY)
+
+
+def setup_gap() -> str | None:
+    if enabled() and not settings.STRIPE_WEBHOOK_SECRET:
+        return "STRIPE_WEBHOOK_SECRET is not set, so changes made in the Stripe customer portal will not arrive"
+    return None
 
 
 @functools.lru_cache(maxsize=1)
@@ -118,6 +128,18 @@ def _new_customer(v1, user: User):
 
 def start_checkout(db: Session, user: User, plan: Plan) -> dict:
     customer = customer_for(db, user)
+    db.query(User).filter(User.id == user.id).with_for_update().populate_existing().first()
+    held = _call(lambda v1: v1.subscriptions.list(params={"customer": customer, "status": "all", "limit": 20}))
+    live = [_plain(found) for found in held.data if _plain(found).get("status") in LIVE]
+    if live:
+        for found in live:
+            record(db, found)
+        raise AlreadyPaying("You already have a paid plan. Change it from Manage billing.")
+    left_open = _call(
+        lambda v1: v1.checkout.sessions.list(params={"customer": customer, "status": "open", "limit": 20})
+    )
+    for stale in left_open.data:
+        _call(lambda v1, sid=stale.id: v1.checkout.sessions.expire(sid))
     tags = {"user_id": str(user.id), "plan_id": plan.id}
     session = _call(
         lambda v1: v1.checkout.sessions.create(
@@ -226,6 +248,9 @@ def record(db: Session, found: dict) -> Subscription | None:
         "updated_at": utcnow(),
     }
     row = _write(db, found["id"], user, fields)
+    if user.deletion_requested_at is not None and row.status in LIVE and row.ends_at is None:
+        _call(lambda v1: v1.subscriptions.update(row.id, params={"cancel_at_period_end": True}))
+        row.ends_at = row.current_period_end
     settle_tier(db, user)
     db.commit()
     return row
