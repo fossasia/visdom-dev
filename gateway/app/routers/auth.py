@@ -524,7 +524,7 @@ def request_account_deletion(
     except (payments.PaymentsDown, payments.PaymentsOff) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Your paid plan could not be stopped, so nothing was changed. Try again shortly.",
+            detail="Your paid plan could not be stopped, so the account was not deleted. Try again shortly.",
         ) from exc
     for ws in preview["leaving_with"]:
         evict_workspace(ws.slug, "this account is being deleted")

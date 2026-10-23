@@ -1,7 +1,7 @@
 # Taking payment for plans
 
-Paid plans are sold through Stripe. The card form is Stripe's own, shown inside
-the Billing tab, so card details never reach this server. What the server keeps
+Paid plans are sold through Stripe. The payment form is Stripe's own, shown
+inside the Billing tab, so payment details never reach this server. What the server keeps
 is the Stripe customer and subscription ids, the plan, its status and its
 renewal date.
 
@@ -41,8 +41,9 @@ and webhooks.
 2. **Link the plan to the price.** Store the id on the plan. A plan without
    one cannot be bought.
    ```
-   docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-     -c "UPDATE plans SET stripe_price_id = 'price_...' WHERE id = 'pro';"
+   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+   UPDATE plans SET stripe_price_id = 'price_...' WHERE id = 'pro';
+   SQL
    ```
 3. **Keys.** In Developers, then API keys, copy the publishable key (`pk_test_`)
    and the secret key (`sk_test_`) into `.env`:
