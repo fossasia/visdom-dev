@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app import payments
+from app import bypass, payments
 from app.billing import DEFAULT_TIER, get_plan, ordered_plans, selectable
 from app.config import settings
 from app.dependencies import get_current_user, get_db
@@ -24,7 +24,7 @@ from app.schemas import (
     SubscriptionResponse,
     SubscriptionUpdate,
 )
-from app.usage import MEGABYTE, storage_used, usage
+from app.usage import MEGABYTE, allowances, storage_used, usage
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 def _build_subscription(db: Session, user: User) -> dict:
     tier = user.tier or DEFAULT_TIER
     plan = get_plan(db, tier)
-    limits = plan["limits"]
+    limits = allowances(db, user)
 
     counts = usage(db, user)
     workspaces_used = counts["workspaces"]
@@ -43,6 +43,7 @@ def _build_subscription(db: Session, user: User) -> dict:
         "tier": tier,
         "plan": _offer(plan),
         "support_contact": settings.SUPPORT_CONTACT.strip() or None,
+        "limits_bypassed": bypass.applies_to(db, user),
         "billing": _billing_state(db, user),
         "usage": {
             "workspaces": {"used": workspaces_used, "limit": limits["workspaces"]},

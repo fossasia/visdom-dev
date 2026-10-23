@@ -76,6 +76,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
+    bypass_limits = Column(Boolean, default=False, nullable=False, server_default="false")
     trashed_at = Column(DateTime(timezone=True), nullable=True)
     trashed_by = Column(String, nullable=True)
 
@@ -329,3 +330,20 @@ class Heartbeat(Base):
 
     name = Column(String, primary_key=True)
     beat_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class PlatformSwitch(Base):
+    """Something staff turn on or off for every account at once.
+
+    Kept in the database rather than in the environment, so turning one on is a
+    click in the admin console that takes effect on the next request, with no
+    deploy and no restart. Who last changed it is copied in as text, for the
+    same reason the audit trail copies it: the staff account may not outlive it.
+    """
+
+    __tablename__ = "platform_switches"
+
+    name = Column(String, primary_key=True)
+    is_on = Column(Boolean, nullable=False, default=False, server_default="false")
+    changed_at = Column(DateTime(timezone=True), nullable=True)
+    changed_by = Column(String, nullable=True)

@@ -77,7 +77,7 @@ _EDITABLE_FIELDS = {
     ADMIN: _ENTITLEMENT_FIELDS,
     SUPERADMIN: dict(
         _ENTITLEMENT_FIELDS,
-        User=_ENTITLEMENT_FIELDS["User"] | {"password_hash"},
+        User=_ENTITLEMENT_FIELDS["User"] | {"password_hash", "bypass_limits"},
         AdminUser={"is_active"},
     ),
 }
@@ -115,6 +115,15 @@ def can_sweep(role):
     by a tuple spelled out at each call site.
     """
     return role in _SWEEPERS
+
+
+def can_bypass_limits(role):
+    """Whether this role may bypass plan limits, for one account or for all.
+
+    A bypass hands out everything a plan holds back, storage included, so it
+    sits with superadmins only.
+    """
+    return "bypass_limits" in editable_fields(role, "User")
 
 
 def is_valid(role):
