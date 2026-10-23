@@ -2,7 +2,7 @@
 
 export const CONTROLLER = {
   name: 'FOSSASIA PTE. LTD.',
-  address: '12 Eu Tong Sen Street #8-169, Singapore 059819',
+  address: '12 Eu Tong Sen Street #08-169, Singapore 059819',
   email: 'office@fossasia.org',
 };
 
