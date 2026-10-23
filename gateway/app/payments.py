@@ -48,13 +48,17 @@ class AlreadyPaying(RuntimeError):
     pass
 
 
-def enabled() -> bool:
+def _keys_set() -> bool:
     return bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_PUBLISHABLE_KEY)
 
 
+def enabled() -> bool:
+    return _keys_set() and bool(settings.STRIPE_WEBHOOK_SECRET)
+
+
 def setup_gap() -> str | None:
-    if enabled() and not settings.STRIPE_WEBHOOK_SECRET:
-        return "STRIPE_WEBHOOK_SECRET is not set, so changes made in the Stripe customer portal will not arrive"
+    if _keys_set() and not settings.STRIPE_WEBHOOK_SECRET:
+        return "The Stripe keys are set but STRIPE_WEBHOOK_SECRET is not, so payments stay off"
     return None
 
 
@@ -311,6 +315,7 @@ def stop_renewing(db: Session, user: User) -> None:
     for row in _open(db, user):
         _call(lambda v1, sid=row.id: v1.subscriptions.update(sid, params={"cancel_at_period_end": True}))
         row.ends_at = row.current_period_end
+        db.commit()
 
 
 def end_now(db: Session, user: User) -> None:

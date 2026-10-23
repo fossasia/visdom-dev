@@ -35,6 +35,7 @@ class FakeStripe:
         self.subscriptions = {}
         self.open_sessions = []
         self.fail = False
+        self.fail_after = None
         self.busy = 0
         self.v1 = type("V1", (), {})()
         self.v1.customers = self._Section(self, "customers")
@@ -68,6 +69,10 @@ class FakeStripe:
             return self.owner.act(self.name, "expire", found_id, options)
 
     def act(self, section, verb, args, options):
+        if self.fail_after is not None:
+            if self.fail_after == 0:
+                raise stripe.APIConnectionError("no network")
+            self.fail_after -= 1
         if self.fail:
             raise stripe.APIConnectionError("no network")
         self.calls.append((section, verb, args, options))
@@ -501,10 +506,29 @@ def test_a_checkout_finished_after_asking_to_delete_does_not_renew(client, make_
     assert db_session.get(Subscription, "sub_1").ends_at is not None
 
 
-def test_a_missing_webhook_secret_is_named(fake, monkeypatch):
+def test_nothing_is_for_sale_without_a_webhook_secret(client, fake, monkeypatch):
     assert payments.setup_gap() is None
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "")
+
     assert "STRIPE_WEBHOOK_SECRET" in payments.setup_gap()
+    assert not any(plan["checkout"] for plan in _plans(client).values())
+
+
+def test_a_renewal_stopped_before_stripe_failed_is_kept(client, make_user, fake, db_session):
+    user = make_user()
+    _paying(client, db_session, fake, user)
+    fake.subscriptions["sub_2"] = _subscription("sub_2")
+    assert _send(client, "customer.subscription.created", {"id": "sub_2"}).status_code == 200
+    fake.fail_after = 1
+
+    asked = client.post("/api/v1/auth/me/deletion", json={"password": user["password"]}, headers=user["headers"])
+
+    assert asked.status_code == 502
+    db_session.expire_all()
+    stopped = [sid for sid in ("sub_1", "sub_2") if fake.subscriptions[sid]["cancel_at_period_end"]]
+    assert len(stopped) == 1
+    assert db_session.get(Subscription, stopped[0]).ends_at is not None
+    assert _account(db_session, user).deletion_requested_at is None
 
 
 def test_deletion_is_not_started_when_the_plan_cannot_be_stopped(client, make_user, fake, db_session):

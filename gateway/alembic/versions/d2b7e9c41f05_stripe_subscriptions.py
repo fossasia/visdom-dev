@@ -36,12 +36,14 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
     )
     op.create_index(op.f('ix_subscriptions_user_id'), 'subscriptions', ['user_id'], unique=False)
+    op.create_index(op.f('ix_users_stripe_customer_id'), 'users', ['stripe_customer_id'], unique=False)
     op.execute("UPDATE plans SET price = 20 WHERE id = 'pro' AND price = 29")
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     op.execute("UPDATE plans SET price = 29 WHERE id = 'pro' AND price = 20")
+    op.drop_index(op.f('ix_users_stripe_customer_id'), table_name='users')
     op.drop_index(op.f('ix_subscriptions_user_id'), table_name='subscriptions')
     op.drop_table('subscriptions')
     op.drop_constraint('uq_plans_stripe_price_id', 'plans', type_='unique')

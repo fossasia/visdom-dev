@@ -68,7 +68,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    stripe_customer_id = Column(String, nullable=True)
+    stripe_customer_id = Column(String, nullable=True, index=True)
     tier = Column(String, ForeignKey("plans.id", name="fk_users_tier_plans"), default="free")
     is_staff = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, nullable=False, server_default="true")

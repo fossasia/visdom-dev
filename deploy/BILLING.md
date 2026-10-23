@@ -5,8 +5,10 @@ inside the Billing tab, so payment details never reach this server. What the ser
 is the Stripe customer and subscription ids, the plan, its status and its
 renewal date.
 
-Until the Stripe keys are set, nothing can be bought: paid plans show "Not
-available yet" and only free plans can be picked.
+Until the two Stripe keys and the webhook secret are all set, nothing can be
+bought: paid plans show "Not available yet" and only free plans can be picked.
+Without the webhook secret, changes made in Stripe's customer portal could not
+reach the gateway, so payments stay off and the gateway says so when it starts.
 
 ## How it behaves
 
@@ -80,9 +82,9 @@ stripe listen --forward-to localhost:8085/api/v1/billing/webhook \
   --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,customer.subscription.paused,customer.subscription.resumed
 ```
 
-It prints a `whsec_` secret for this session; put it in `gateway/.env` as
-`STRIPE_WEBHOOK_SECRET`. Without it the plan still updates when the browser
-comes back from checkout, but changes made in the portal will not arrive.
+It prints a `whsec_` secret for this session. Put it in `STRIPE_WEBHOOK_SECRET`
+in `gateway/.env` when the gateway runs with uvicorn, which is what listens on
+port 8085, or in the root `.env` when it runs under docker compose.
 
 Test cards, with any future expiry date and any CVC:
 
