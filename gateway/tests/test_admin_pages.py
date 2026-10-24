@@ -27,6 +27,7 @@ PAGES = [
     ("/admin/admin-user/list", "staff accounts"),
     ("/admin/admin-action/list", "the audit trail"),
     ("/admin/janitor", "the cleanup page"),
+    ("/admin/limit-bypass", "the limit bypass page"),
 ]
 
 

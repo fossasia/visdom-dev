@@ -23,6 +23,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app import payments
 from app.admin.activity import FilesKept, drop_workspace
 from app.database import SessionLocal
 from app.models import AdminAction, Membership, User, Workspace, WorkspaceInvite, utcnow
@@ -94,8 +95,11 @@ def delete_after(user: User) -> datetime.datetime | None:
 def request(db: Session, user: User) -> datetime.datetime:
     """Start the waiting period and close every session the account has.
 
-    Nothing is removed here. The caller has already checked ``standing``.
+    Nothing is removed here, except that a paid plan is told not to renew, so
+    the waiting period never brings another charge. The caller has already
+    checked ``standing``.
     """
+    payments.stop_renewing(db, user)
     user.deletion_requested_at = utcnow()
     user.token_version = (user.token_version or 0) + 1
     db.commit()
@@ -164,6 +168,8 @@ def erase(db: Session, user_id, now: datetime.datetime | None = None) -> dict | 
         logging.warning("account %s is due for deletion but still runs %s", user.id, exc)
     except FilesKept as exc:
         logging.warning("account %s is due for deletion but kept: %s", user.id, exc)
+    except (payments.PaymentsDown, payments.PaymentsOff) as exc:
+        logging.warning("account %s is due for deletion but its plan is still paid: %s", user.id, exc)
     db.commit()
     return None
 
@@ -176,14 +182,17 @@ def remove(db: Session, user: User, reason: str, staff_id=None, staff_email=None
     """Remove an account and the workspaces only it uses, for good.
 
     Refused with ``StillNeeded`` while the account is responsible for a
-    workspace other people use, and with ``FilesKept`` when an instance did not
-    confirm that the plot files are gone. Either way the account and its rows
+    workspace other people use, with ``FilesKept`` when an instance did not
+    confirm that the plot files are gone, and with ``payments.PaymentsDown``
+    when a paid plan could not be cancelled. Either way the account and its rows
     stay. Files already removed for an earlier workspace stay removed, which is
     why signing in no longer cancels once the waiting period is over.
     """
     state = standing(db, user)
     if state["blockers"]:
         raise StillNeeded(", ".join(ws.slug for ws, _ in state["blockers"]))
+
+    payments.end_now(db, user)
 
     freed = 0
     for workspace in state["leaving_with"]:

@@ -126,6 +126,12 @@
     flex: none;
   }
 
+  .ap-env.is-bypass {
+    background: #f5a524;
+    color: #1d1d1f;
+    text-decoration: none;
+  }
+
   .ap-context {
     display: flex;
     align-items: center;
@@ -682,6 +688,16 @@
     <span>{{ admin.title }}</span>
   </a>
   {% if env.name %}<span class="ap-env">{{ env.name }}</span>{% endif %}
+  {% if limits_bypassed_for_everyone() %}
+  {% set bypass_page = limit_bypass_url(request) %}
+  {% if bypass_page %}
+  <a class="ap-env is-bypass" href="{{ bypass_page }}"
+    title="Every account is held to no plan limit until this is switched off">Limits bypassed</a>
+  {% else %}
+  <span class="ap-env is-bypass"
+    title="Every account is held to no plan limit until a superadmin switches this off">Limits bypassed</span>
+  {% endif %}
+  {% endif %}
   <div class="ap-context">
     {% block context_actions %}{% endblock %}
   </div>

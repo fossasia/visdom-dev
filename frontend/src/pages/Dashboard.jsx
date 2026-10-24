@@ -39,9 +39,19 @@ const Dashboard = () => {
   const [pendingInvites, setPendingInvites] = useState([]);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
+    const asked = new URLSearchParams(window.location.search).get('tab');
+    if (asked && TAB_IDS.has(asked)) return asked;
     const stored = readScoped(ACTIVE_TAB_STORAGE_KEY, user?.id);
     return stored && TAB_IDS.has(stored) ? stored : DEFAULT_TAB;
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('tab')) return;
+    params.delete('tab');
+    const rest = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+  }, []);
 
   const isAdmin = activeWorkspace?.role === 'admin';
   const activeWorkspaceId = activeWorkspace?.id;

@@ -1,0 +1,155 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Limit bypass</h1>
+<div class="ap-page-subtitle">Hold accounts to no plan limit, without changing anyone's plan.</div>
+{% endblock %}
+
+{% block content %}
+{% include 'sqladmin/cleanup_styles.html' %}
+<style>
+  .ap-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .ap-switch-state {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ap-ink);
+  }
+
+  .ap-switch-state.is-on {
+    color: #8a5a00;
+  }
+
+  .ap-switch-note {
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+    margin-top: 4px;
+  }
+
+  .ap-bypass-add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 18px;
+    border-bottom: 1px solid var(--ap-hairline);
+  }
+
+  .ap-bypass-add label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+  }
+
+  .ap-bypass-add input {
+    min-width: 280px;
+    padding: 7px 10px;
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius-sm);
+    font-size: 14px;
+    background: var(--ap-surface);
+    color: var(--ap-ink);
+  }
+
+  .ap-bypass-section {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 24px 0 8px;
+  }
+</style>
+
+<div class="col-12">
+  <p class="ap-explain">
+    A bypassed account is refused nothing its plan would have refused: no ceiling on workspaces,
+    members, API keys or storage, and nothing is removed for being older than the plan keeps.
+    Its plan stays as it is, so switching the bypass off puts back exactly what was there.
+    Whatever was made in the meantime is kept; the account is only stopped from making more.
+  </p>
+
+  <h2 class="ap-bypass-section">Every account</h2>
+  {% if everyone.on %}
+  <div class="ap-warn">
+    While this is on nothing holds storage back, for any of the {{ total }} accounts or for
+    anyone who registers. Keep an eye on the disk, and switch it off when the promotion ends.
+  </div>
+  {% endif %}
+  <form method="post" class="card">
+    <div class="ap-switch">
+      <div>
+        <div class="ap-switch-state{% if everyone.on %} is-on{% endif %}" data-everyone="{{ 'on' if everyone.on else 'off' }}">
+          {% if everyone.on %}On: every account is bypassed{% else %}Off: every account is on its plan's limits{% endif %}
+        </div>
+        {% if everyone.changed_at %}
+        <div class="ap-switch-note">
+          Last switched {{ everyone.changed_at }} UTC{% if everyone.changed_by %} by {{ everyone.changed_by }}{% endif %}.
+        </div>
+        {% endif %}
+      </div>
+      {% if everyone.on %}
+      <button type="submit" class="ap-act" name="intent" value="everyone_off"
+        data-confirm-label="Switch off" data-confirm-title="Put every account back on its plan's limits?"
+        data-confirm="Nothing is deleted. Accounts over their plan keep what they have and are stopped from making more. Accounts bypassed one by one below stay bypassed.">Switch off</button>
+      {% else %}
+      <button type="submit" class="ap-act is-danger" name="intent" value="everyone_on"
+        data-danger data-confirm-label="Bypass for everyone"
+        data-confirm-title="Bypass plan limits for every account?"
+        data-confirm="All {{ total }} accounts, and anyone who registers, are held to no limit at once. That includes storage, so nothing stops the disk filling. It stays on until someone switches it off.">Bypass for everyone</button>
+      {% endif %}
+    </div>
+  </form>
+
+  <h2 class="ap-bypass-section">One account at a time</h2>
+  <form method="post" class="card">
+    <div class="ap-bypass-add">
+      <label>
+        Account email
+        <input type="email" name="email" placeholder="someone@example.com" required>
+      </label>
+      <button type="submit" class="ap-act" name="intent" value="account_on">Bypass this account</button>
+    </div>
+  </form>
+
+  {% if accounts %}
+  <form method="post" class="card">
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter">
+        <thead>
+          <tr>
+            <th>Bypassed account</th>
+            <th>Plan it returns to</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for account in accounts %}
+          <tr>
+            <td>{{ account.email }}</td>
+            <td>{{ account.plan }}</td>
+            <td>
+              <div class="ap-row-actions">
+                <button type="submit" class="ap-act" name="user_id" value="{{ account.id }}"
+                  data-confirm-label="Stop" data-confirm-title="Stop the bypass for {{ account.email }}?"
+                  data-confirm="The account goes back to the {{ account.plan }} plan's limits at once. It keeps what it has.">Stop</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <input type="hidden" name="intent" value="account_off">
+  </form>
+  {% else %}
+  <div class="card"><div class="card-body">No account is bypassed on its own.</div></div>
+  {% endif %}
+</div>
+{% endblock %}

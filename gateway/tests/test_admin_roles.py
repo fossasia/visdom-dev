@@ -54,7 +54,12 @@ def test_only_a_superadmin_reads_the_audit_trail():
 def test_setting_a_tier_is_an_entitlement_decision():
     assert roles.editable_fields(roles.SUPPORT, "User") == {"is_active"}
     assert roles.editable_fields(roles.ADMIN, "User") == {"is_active", "tier"}
-    assert roles.editable_fields(roles.SUPERADMIN, "User") == {"is_active", "tier", "password_hash"}
+    assert roles.editable_fields(roles.SUPERADMIN, "User") == {
+        "is_active",
+        "tier",
+        "password_hash",
+        "bypass_limits",
+    }
 
 
 def test_support_and_above_may_suspend_a_workspace():

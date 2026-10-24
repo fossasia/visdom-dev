@@ -2,11 +2,11 @@
 
 export const CONTROLLER = {
   name: 'FOSSASIA PTE. LTD.',
-  address: '12 Eu Tong Sen Street #8-169, Singapore 059819',
+  address: '12 Eu Tong Sen Street #08-169, Singapore 059819',
   email: 'office@fossasia.org',
 };
 
-export const UPDATED = '19 October 2026';
+export const UPDATED = '23 October 2026';
 
 export const PRIVACY = [
   {
@@ -22,6 +22,7 @@ export const PRIVACY = [
       'Your account: the email address you signed up with, the username shown to people you share a workspace with, and your password. Your password is stored as a hash, which means we cannot read it and cannot tell you what it is.',
       'What you send: the plots, values and text your code writes into your workspaces. We treat this as yours. Nobody outside your workspace sees it, and we do not look through it except when you ask for help with a specific problem.',
       'How much you use: how many minutes a workspace was written to, how many writes it took, and how much disk it holds. We need these to apply the limits of your plan.',
+      'If you buy a paid plan: your payment details, whether a card, a bank account or another method Stripe offers, go straight to Stripe and never reach us. We keep a reference to your Stripe customer and subscription, which plan it is for, whether it is paid up, and when it renews.',
       'Technical records: the address your requests come from, the browser you used, and the time, kept in server logs. Actions taken by our staff in the admin console are recorded with the staff account that took them.',
     ],
   },
@@ -30,7 +31,7 @@ export const PRIVACY = [
     body: [
       'To run the service: sign you in, keep your workspaces separate, and show you your plots.',
       'To keep it working and secure: find faults, investigate abuse, and stop one account from taking the service down for everyone.',
-      'To apply your plan: counting usage is how limits and, later, billing work.',
+      'To apply your plan: counting usage is how limits work, and a paid plan is charged through Stripe.',
       'We do not sell any of it, we do not use it for advertising, and we do not run analytics or tracking scripts on this site.',
     ],
   },
@@ -45,9 +46,10 @@ export const PRIVACY = [
     heading: 'How long we keep it',
     body: [
       'Your account details are kept while the account exists.',
-      'Plot data is kept until you delete it, or until your workspace is deleted.',
+      'Plot data is kept for at least as long as your plan says, counted from when an environment was last written to. The free plan keeps 7 days and the pro plan keeps 90. After that, older environments may be removed automatically.',
       'Backups are kept for 90 days and then deleted, so data can remain in a backup for up to 90 days after you remove it from the service.',
       'Usage records are kept while the workspace they describe exists, and are deleted with it. Deleting your account deletes your workspaces, so their usage records go too.',
+      'Billing records are kept while the account exists and deleted with it. Stripe keeps its own record of payments, as the law requires of a payment provider.',
       'Server logs are kept in files of a fixed size. The oldest entries are overwritten as new ones arrive, so logs are not kept indefinitely and are not kept per account.',
     ],
   },
@@ -56,14 +58,15 @@ export const PRIVACY = [
     body: [
       'Oracle Cloud Infrastructure hosts the service. Amazon Web Services stores the backups. Cloudflare answers DNS for the visdom.dev name.',
       'When email is switched on, an email provider will deliver messages such as password resets and invitations. This page will name it before that happens.',
-      'None of them are given your data for their own purposes.',
+      'Stripe takes payment for paid plans. It receives your email address and the payment details you enter in its payment form.',
+      'None of them are given your data for their own purposes, except that Stripe keeps payment records and checks payments for fraud, as a payment provider must.',
     ],
   },
   {
     heading: 'What you can ask for',
     body: [
       'A copy of what we hold about you, a correction, or deletion of your account and its contents.',
-      'You can delete workspaces yourself from the console at any time. Deleting a whole account is done by hand at the moment: email us and we will confirm when it is done.',
+      'You can delete workspaces yourself from the console at any time. You can also delete your whole account from your profile. It stops working straight away and is removed for good 30 days later, along with any workspace nobody else uses. Signing in during those 30 days cancels it.',
       'If you think we are handling your data wrongly, tell us first, and you also have the right to complain to a data protection authority.',
     ],
   },
@@ -96,8 +99,9 @@ export const COOKIES = [
   {
     heading: 'What we do not set',
     body: [
-      'No analytics, no advertising, no tracking, and no cookies belonging to anyone else. Nothing here follows you to other sites.',
-      'That is why this site does not ask you to accept cookies: the two it sets are the ones without which signing in cannot work.',
+      'No analytics, no advertising and no tracking. Nothing here follows you to other sites.',
+      'The one exception is paying for a plan. When you open the payment form, Stripe loads it and sets its own cookies, which it uses to stop fraud. They are not set anywhere else on this site.',
+      'That is why this site does not ask you to accept cookies: the two it sets are needed to sign in, and Stripe\'s are needed to pay.',
     ],
   },
   {

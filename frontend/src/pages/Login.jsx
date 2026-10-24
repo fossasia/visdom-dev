@@ -1,10 +1,13 @@
 /* Copyright 2017-present, The Visdom Authors */
 import { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { api, useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import PasswordInput from '../components/PasswordInput';
 import { useToast } from '../components/toast/useToast';
-import { resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
+import { parseApiError, resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
+import { formatMoment } from '../utils/billing';
+import { invalidate } from '../utils/requestCache';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -14,9 +17,35 @@ const Login = () => {
   
   const { login } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
   const from = resolvePostAuthTarget(location);
+
+  const offerRenewal = async () => {
+    let subscription;
+    try {
+      subscription = (await api.get('/billing/subscription')).data;
+    } catch {
+      return;
+    }
+    const { billing, plan } = subscription;
+    if (!billing?.enabled || !billing.status || !billing.ends_at) return;
+    const ok = await confirm({
+      title: 'Keep your plan?',
+      message: `Your ${plan.name} plan was set to end on ${formatMoment(billing.ends_at)}. Turn renewal back on?`,
+      confirmText: 'Keep renewing',
+      cancelText: 'Let it end',
+    });
+    if (!ok) return;
+    try {
+      const response = await api.post('/billing/renewal');
+      invalidate('/billing/subscription');
+      toast.success(`Your ${plan.name} plan renews on ${formatMoment(response.data.billing.renews_at)}.`);
+    } catch (err) {
+      toast.error(parseApiError(err, 'Could not turn renewal back on. Try it from Manage billing.'));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,6 +56,7 @@ const Login = () => {
       const signedIn = await login(email, password);
       if (signedIn?.deletion_cancelled) {
         toast.success('Welcome back. Your account is no longer set to be deleted.', { duration: 8000 });
+        await offerRenewal();
       }
       redirectAfterAuth(from, navigate);
     } catch (err) {
