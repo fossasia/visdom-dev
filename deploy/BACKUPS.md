@@ -7,15 +7,16 @@ nothing, uploaded to S3 and kept for a week on the box as well.
 |---|---|---|
 | `db.dump` | `pg_dump -Fc` of the Postgres container | accounts, workspaces, keys, memberships, usage |
 | `envs.tar` | the `visdom_data` volume, mounted at `/data/envs` | every environment's plots, one JSON per env |
-| `env` | `.env` beside `docker-compose.yml` | database password, JWT secret, admin secret, SMTP settings |
+| `env` | `.env` beside `docker-compose.yml` | database password, JWT secret, admin secret, internal keys, SMTP and Stripe settings |
 
 The third one is why the bucket must stay private. Without it a rebuilt box
 cannot read its own database.
 
 ## One time, in the AWS console
 
-1. **Pick a region** (top right) and keep it. `ap-south-1` (Mumbai) is the
-   closest to home. Every step below happens inside that region.
+1. **Pick a region** (top right) and keep it, ideally the one closest to the
+   server. The examples below use `ap-south-1` (Mumbai). Every step below
+   happens inside that region.
 2. **S3 → Create bucket.** Name it something unique, for example
    `visdom-dev-backups-<something>`. Leave **Block all public access** on.
    Turn **Bucket Versioning** on, so a bad night cannot overwrite a good one.
@@ -145,8 +146,10 @@ docker compose restart visdom-1 visdom-2 visdom-3
 The database is dumped a moment before the plot data is archived, with the
 stack running. A plot sent in that moment can be in one and not the other.
 
-On a fresh box, put `env` back as `.env` first, then `docker compose up -d`,
-then restore as above.
+On a fresh box, put `env` back as `.env` first. The internal certificate in
+`deploy/internal-tls/` is not in the archive, so make a new one with
+`deploy/internal-cert.sh new` (see `INTERNAL.md`). Then `docker compose up -d`,
+and restore as above.
 
 ## Drill it
 

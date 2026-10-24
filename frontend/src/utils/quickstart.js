@@ -1,6 +1,6 @@
 /* Copyright 2017-present, The Visdom Authors */
 
-export const CLIENT_INSTALL = 'pip install "git+https://github.com/vedansh-5/visdom.git@dev"';
+export const CLIENT_INSTALL = 'pip install "git+https://github.com/fossasia/visdom.git@dev"';
 
 export const KEY_PLACEHOLDER = 'visdom_live_...';
 

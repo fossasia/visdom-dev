@@ -10,7 +10,7 @@ There are two endpoints, and they answer different questions.
 | Endpoint | Asks | Use it for |
 |---|---|---|
 | `/api/v1/health` | is the gateway up and is the database reachable | a frequent, cheap poll |
-| `/api/v1/health/components` | that, plus is every visdom instance answering | the alert that matters |
+| `/api/v1/health/components` | that, plus is every visdom instance answering, is the internal certificate valid, and is metering running | the alert that matters |
 
 The second one exists because the first stays green in a state that is useless
 to a user: the console loads, sign-in works, and not one plot does, because the
@@ -21,8 +21,13 @@ catches it.
 A healthy answer:
 
 ```json
-{"status": "healthy", "checks": {"database": "ok", "visdom": "3 of 3 answering", "metering": "ok"}}
+{"status": "healthy", "checks": {"database": "ok", "visdom": "3 of 3 answering", "internal_certificate": "712 days left", "metering": "ok"}}
 ```
+
+An `internal_setup` entry appears, and the answer turns 503, when the gateway
+is missing the internal key or certificate it needs to reach the instances. An
+`internal_certificate` with fewer than 30 days left also turns it 503. See
+`INTERNAL.md` for both.
 
 **Setting it up**, about five minutes: make a free account at uptimerobot.com or
 betterstack.com, add an HTTPS monitor on
@@ -71,7 +76,13 @@ only for instances that also restarted, since the rest keep counting.
 
 ## What is still not watched
 
-- **Certificate expiry.** Caddy renews on its own, and an expired certificate
-  would show up as the uptime check failing, which is late but not silent.
+- **The public certificate's expiry.** Whatever terminates HTTPS in front of the
+  stack (Caddy on the test deployment) renews on its own, and an expired
+  certificate would show up as the uptime check failing, which is late but not
+  silent. The internal certificate is watched, see above.
+- **The retention sweep and account deletion.** They run inside the gateway like
+  metering, but leave no timestamp, so one that stopped would not show here.
+  `docker compose logs gateway | grep -i -e retention -e deletion` shows what
+  they removed and any run that failed.
 - **Slow.** These checks are up or down only. A deployment that answers every
   request in nine seconds is "up" to both of them.

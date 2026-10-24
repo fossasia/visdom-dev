@@ -48,7 +48,7 @@ const QuickStart = ({ apiKey, workspace, compact = false }) => (
     {!compact && (
       <p className="gc-quickstart-lead">
         A key on its own does nothing. These two steps send a plot from your machine,
-        and the environment shows up under Open Visualizations.
+        and the environment shows up under Visualizations.
       </p>
     )}
     <CodeBlock label="1. Install the client" code={CLIENT_INSTALL} what="install command" />
