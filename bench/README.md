@@ -474,8 +474,8 @@ docker compose --profile bench run --rm -T bench \
 A partial `setup` still prints its manifest, so a run that dies halfway is recoverable
 rather than orphaned.
 
-The client is installed from the fork's `dev` branch, not PyPI, because `api_key=` and
-`workspace=` are additions this project made and do not exist upstream. That also keeps
+The client is installed from fossasia/visdom's `dev` branch, not PyPI, because `api_key=`
+and `workspace=` are not in a visdom release yet. That also keeps
 the client's auth protocol in step with the server it is measuring — **rebuild the bench
 image whenever you rebuild visdom.** Pin a different commit with
 `--build-arg VISDOM_REF=<sha>`.

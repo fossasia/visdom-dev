@@ -2,13 +2,13 @@
 
 We want to make contributing to this project as easy and transparent as possible.
 
-Visdom Dev is the hosted control plane for [visdom](https://github.com/fossasia/visdom) — a FastAPI backend (`gateway/`) plus a React console (`frontend/`). Please keep in mind that, like visdom itself, this is a project maintained in contributors' spare time, so response times may vary.
+Visdom Dev is the hosted control plane for [visdom](https://github.com/fossasia/visdom): a FastAPI backend (`gateway/`) plus a React console (`frontend/`). Please keep in mind that, like visdom itself, this is a project maintained in contributors' spare time, so response times may vary.
 
 ## Guidelines for Contributors
 
 ### First-Time Contributors
 
-If you are a first-time contributor, we highly recommend starting with beginner-friendly issues. Please avoid taking up tasks that involve large-scale file changes or major refactoring until you're familiar with the codebase — keeping your initial contributions focused and scoped will make the review process smoother.
+If you are a first-time contributor, we highly recommend starting with beginner-friendly issues. Please avoid taking up tasks that involve large-scale file changes or major refactoring until you're familiar with the codebase. Keeping your initial contributions focused and scoped will make the review process smoother.
 
 ### AI Usage Guidelines
 
@@ -27,11 +27,13 @@ See the [README](README.md#getting-started) for full instructions on setting up 
 
 We actively welcome your pull requests.
 
-1. Fork the repo and create your branch from `master`.
-2. If you've added code that should be tested, add tests — new gateway endpoints and business logic should have pytest coverage under `gateway/tests/`.
+1. Fork the repo and create your branch from `main`.
+2. If you've added code that should be tested, add tests. New gateway endpoints and business logic should have pytest coverage under `gateway/tests/`, and frontend changes Vitest coverage next to the code in a `__tests__/` folder.
 3. If you've changed an API, update the relevant schema/docs.
-4. Make sure your code lints and your tests pass (see below). CI runs the same checks automatically on every pull request and must be green before merging.
-5. If you haven't already, complete the Contributor License Agreement ("CLA"), if one is required for this repository.
+4. If you've changed a model in `gateway/app/models.py`, add an Alembic migration for it (see below).
+5. If you've changed something on screen, add screenshots or a short screencast to the pull request description. A maintainer may add the `needs-screencast` label, which asks for one.
+6. Make sure your code lints and your tests pass (see below). CI runs the same checks automatically on every pull request and must be green before merging.
+7. If you haven't already, complete the Contributor License Agreement ("CLA"), if one is required for this repository.
 
 ## Running Tests
 
@@ -43,13 +45,30 @@ pip install -r requirements.txt -c constraints.txt
 pytest tests/ -v
 ```
 
-The frontend does not yet have an automated test suite. For frontend changes, run a production build as a compile-correctness check:
+The frontend tests use Vitest and React Testing Library:
 
 ```bash
 cd frontend
 npm install
-npm run build
+npm test            # run once
+npm run test:watch  # rerun on every change
 ```
+
+`npm test` runs the tests. `npm run build` is a separate check that the production build still compiles; CI runs both.
+
+## Database migrations
+
+The gateway's tests build the schema straight from the models, so a model change without a migration still passes them. CI has a separate job that catches it: it migrates an empty Postgres database to the newest revision, checks the models match the migrations, then reverses the whole chain and replays it.
+
+After changing a model, against a local Postgres:
+
+```bash
+cd gateway
+alembic upgrade head
+alembic revision --autogenerate -m "say what changed"
+```
+
+Read the file it writes before committing it. The new revision must come after the current head on `main`; if `main` gained a migration while your branch was open, update `down_revision` so the chain stays a single line.
 
 ## Running the Linter
 
@@ -73,13 +92,13 @@ cd frontend
 npm run lint
 ```
 
-Both linters run automatically in CI (`.github/workflows/ci.yml`) on every pull request — running them locally first will save you a review round-trip.
+Both linters run automatically in CI (`.github/workflows/ci.yml`) on every pull request. Running them locally first will save you a review round-trip.
 
 ## Coding Style
 
 - Follow PEP 8 for Python; line length is capped at 120 characters (enforced by ruff, see `gateway/pyproject.toml`).
 - Follow the existing ESLint configuration for JavaScript/JSX (`frontend/eslint.config.js`).
-- Keep new code comment-free unless a comment explains a genuinely non-obvious constraint or workaround — well-named functions and variables should do most of the explaining.
+- Keep new code comment-free unless a comment explains a genuinely non-obvious constraint or workaround. Well-named functions and variables should do most of the explaining.
 
 ## Issues
 
