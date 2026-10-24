@@ -87,6 +87,7 @@ class DeletionPreview(BaseModel):
     grace_days: int
     blockers: List[DeletionWorkspace]
     leaving_with: List[DeletionWorkspace]
+    renewing_plan: Optional[str] = None
 
 
 class DeletionScheduled(BaseModel):
@@ -164,6 +165,7 @@ class PlanResponse(BaseModel):
     limits: PlanLimits
     retention_days: Optional[int] = None
     features: List[str]
+    checkout: bool = False
 
 
 class UsageMetric(BaseModel):
@@ -175,13 +177,40 @@ class SubscriptionUsage(BaseModel):
     workspaces: UsageMetric
     members: UsageMetric
     api_keys: UsageMetric
+    storage: UsageMetric
+
+
+class BillingState(BaseModel):
+    enabled: bool
+    status: Optional[str] = None
+    plan_id: Optional[str] = None
+    renews_at: Optional[datetime.datetime] = None
+    ends_at: Optional[datetime.datetime] = None
+    can_manage: bool = False
 
 
 class SubscriptionResponse(BaseModel):
     tier: str
     plan: PlanResponse
     usage: SubscriptionUsage
+    support_contact: Optional[str] = None
+    billing: BillingState
 
 
 class SubscriptionUpdate(BaseModel):
     tier: str = Field(..., min_length=1, max_length=40)
+
+
+class CheckoutStarted(BaseModel):
+    session_id: str
+    client_secret: str
+    publishable_key: str
+
+
+class CheckoutStatus(BaseModel):
+    status: Optional[str] = None
+    subscription: SubscriptionResponse
+
+
+class PortalLink(BaseModel):
+    url: str

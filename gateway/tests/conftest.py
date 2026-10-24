@@ -12,6 +12,9 @@ from sqlalchemy.pool import StaticPool
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["USAGE_SAMPLE_SECONDS"] = "0"
+os.environ["STRIPE_SECRET_KEY"] = ""
+os.environ["STRIPE_PUBLISHABLE_KEY"] = ""
+os.environ["STRIPE_WEBHOOK_SECRET"] = ""
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-0123456789abcdef")
 
 from app import security

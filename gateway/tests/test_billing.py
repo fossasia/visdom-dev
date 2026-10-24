@@ -17,7 +17,7 @@ def test_list_plans(client):
         "storage_mb": 1024,
         "workspace_storage_mb": 1024,
     }
-    assert pro["price"] == 29
+    assert pro["price"] == 20
     assert pro["limits"]["members"] is None
     assert enterprise["price"] is None
     assert enterprise["limits"] == {
@@ -46,6 +46,7 @@ def test_fresh_user_subscription(client, make_user):
         "workspaces": {"used": 0, "limit": 1},
         "members": {"used": 0, "limit": 3},
         "api_keys": {"used": 0, "limit": 2},
+        "storage": {"used": 0, "limit": 1024 * 1024 * 1024},
     }
 
 
@@ -74,25 +75,32 @@ def test_subscription_usage_counts(client, make_user, make_workspace, add_member
     assert member_usage["api_keys"]["used"] == 0
 
 
-def test_change_plan(client, make_user):
+def test_a_paid_plan_cannot_be_picked_without_paying(client, make_user):
     user = make_user()
 
-    upgraded = client.post(
+    refused = client.post(
         f"{BILLING}/subscription", json={"tier": "pro"}, headers=user["headers"]
     )
-    assert upgraded.status_code == 200
-    assert upgraded.json()["tier"] == "pro"
-    assert upgraded.json()["plan"]["id"] == "pro"
-    assert upgraded.json()["usage"]["workspaces"]["limit"] == 10
+    assert refused.status_code == 402
+    assert client.get("/api/v1/auth/me", headers=user["headers"]).json()["tier"] == "free"
 
-    persisted = client.get(f"{BILLING}/subscription", headers=user["headers"]).json()
-    assert persisted["tier"] == "pro"
-    assert client.get("/api/v1/auth/me", headers=user["headers"]).json()["tier"] == "pro"
 
-    downgraded = client.post(
+def test_a_custom_plan_cannot_be_picked(client, make_user):
+    user = make_user()
+    refused = client.post(
+        f"{BILLING}/subscription", json={"tier": "enterprise"}, headers=user["headers"]
+    )
+    assert refused.status_code == 422
+
+
+def test_moving_back_to_the_free_plan(client, make_user):
+    user = make_user(tier="pro")
+    moved = client.post(
         f"{BILLING}/subscription", json={"tier": "free"}, headers=user["headers"]
     )
-    assert downgraded.json()["tier"] == "free"
+    assert moved.status_code == 200
+    assert moved.json()["tier"] == "free"
+    assert moved.json()["usage"]["workspaces"]["limit"] == 1
 
 
 def test_change_plan_invalid_tier(client, make_user):
@@ -121,7 +129,7 @@ def test_free_plan_refuses_a_second_workspace(client, make_user):
     assert "workspace limit" in second.json()["detail"]
 
 
-def test_upgrading_raises_the_workspace_ceiling(client, make_user):
+def test_upgrading_raises_the_workspace_ceiling(client, make_user, db_session):
     user = make_user()
     assert (
         client.post(
@@ -136,7 +144,7 @@ def test_upgrading_raises_the_workspace_ceiling(client, make_user):
         == 402
     )
 
-    client.post(f"{BILLING}/subscription", json={"tier": "pro"}, headers=user["headers"])
+    _put_on(db_session, user, "pro")
 
     assert (
         client.post(
@@ -147,10 +155,7 @@ def test_upgrading_raises_the_workspace_ceiling(client, make_user):
 
 
 def test_an_unlimited_plan_is_never_refused(client, make_user):
-    user = make_user()
-    client.post(
-        f"{BILLING}/subscription", json={"tier": "enterprise"}, headers=user["headers"]
-    )
+    user = make_user(tier="enterprise")
     for n in range(3):
         created = client.post(
             WORKSPACES,
@@ -230,8 +235,7 @@ def test_an_archived_plan_is_not_offered(client, db_session):
 
 
 def test_an_account_cannot_move_itself_onto_a_hidden_plan(client, make_user, db_session):
-    """Changing plan needs no payment yet, so a hidden tier must not be a
-    request away."""
+    """A hidden tier is assigned by staff, never a request away."""
     _plan(db_session, "internal", workspaces=None, public=False)
     user = make_user()
     refused = client.post(f"{BILLING}/subscription", json={"tier": "internal"}, headers=user["headers"])
@@ -343,6 +347,23 @@ def test_an_untouched_features_box_saves_as_no_features():
     assert validate_features({}) == []
     assert validate_features(None) == []
     assert validate_features(["  one  ", ""]) == ["one"]
+
+
+def test_the_subscription_says_where_to_ask_for_a_custom_plan(client, make_user, monkeypatch):
+    from app.config import settings
+
+    user = make_user()
+    monkeypatch.setattr(settings, "SUPPORT_CONTACT", "  team@example.org  ")
+    shown = client.get(f"{BILLING}/subscription", headers=user["headers"]).json()
+    assert shown["support_contact"] == "team@example.org"
+
+
+def test_no_contact_is_offered_until_one_is_configured(client, make_user, monkeypatch):
+    from app.config import settings
+
+    user = make_user()
+    monkeypatch.setattr(settings, "SUPPORT_CONTACT", "")
+    assert client.get(f"{BILLING}/subscription", headers=user["headers"]).json()["support_contact"] is None
 
 
 def test_an_expired_or_revoked_key_frees_its_slot(client, make_user, db_session):

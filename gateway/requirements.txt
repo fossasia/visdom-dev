@@ -17,3 +17,4 @@ sqladmin>=0.31.0,<0.32.0
 # made its submodules lazy, so that attribute is gone and every admin edit fails.
 anyio>=4.0.0,<4.15.0
 itsdangerous>=2.1.0
+stripe>=15.6.0,<16
