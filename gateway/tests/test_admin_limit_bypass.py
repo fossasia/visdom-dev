@@ -93,6 +93,7 @@ def test_bypassing_limits_for_everyone_is_recorded_and_said_on_every_page(admin_
 
     db = admin_client.staff_db
     assert "Limits bypassed" not in admin_client.get("/admin/").text
+    assert 'class="ap-env is-bypass"' not in admin_client.get("/admin/user/list").text
 
     done = _bypass_post(admin_client, intent="everyone_on")
     assert "notice_kind=success" in done.headers["location"]
@@ -104,7 +105,7 @@ def test_bypassing_limits_for_everyone_is_recorded_and_said_on_every_page(admin_
     assert trail.changes == {"is_on": True}
     assert trail.admin_email == "staff@example.com"
     assert 'data-everyone="on"' in admin_client.get("/admin/limit-bypass").text
-    assert "Limits bypassed" in admin_client.get("/admin/user/list").text
+    assert 'class="ap-env is-bypass"' in admin_client.get("/admin/user/list").text
 
 
 def test_switching_everyone_off_again_is_recorded_too(admin_client):
@@ -263,5 +264,5 @@ def test_staff_who_cannot_switch_it_are_still_told_it_is_on(admin_client):
     _sign_in_as(admin_client, "support")
 
     page = admin_client.get("/admin/user/list").text
-    assert "Limits bypassed" in page
+    assert 'class="ap-env is-bypass"' in page
     assert "/admin/limit-bypass" not in page
