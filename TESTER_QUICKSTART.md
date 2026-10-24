@@ -74,5 +74,5 @@ list, updating live. You only ever see your own workspace's environments.
 ## Notes
 - Use throwaway data and accounts during testing.
 - One key can drive many environments: just write to different `env=` names.
-- Environments older than your plan keeps can be removed. The **History** section of the
+- Environments older than your plan's retention period can be removed. The **History** section of the
   **Workspaces** tab says how long yours keeps them, and warns before anything goes.
