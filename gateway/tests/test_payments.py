@@ -96,6 +96,12 @@ class FakeStripe:
         if section == "portal":
             return Found(url="https://billing.stripe.com/p/session/test")
         if section == "subscriptions":
+            if verb in ("retrieve", "update", "cancel"):
+                found_id = args[0] if verb == "update" else args
+                if found_id not in self.subscriptions:
+                    raise stripe.InvalidRequestError("No such subscription", "id")
+                if verb != "retrieve" and self.subscriptions[found_id]["status"] == "canceled":
+                    raise stripe.InvalidRequestError("A canceled subscription can only update its metadata", None)
             if verb == "retrieve":
                 return Found(self.subscriptions[args])
             if verb == "list":
@@ -567,6 +573,41 @@ def test_removing_the_account_cancels_the_plan_first(client, make_user, fake, db
     assert fake.subscriptions["sub_1"]["status"] == "canceled"
     assert db_session.query(User).filter(User.email == user["email"]).first() is None
     assert db_session.query(Subscription).count() == 0
+
+
+def test_a_plan_stripe_already_ended_does_not_hold_up_a_deletion(client, make_user, fake, db_session):
+    user = make_user()
+    _paying(client, db_session, fake, user)
+    fake.subscriptions["sub_1"]["status"] = "canceled"
+
+    asked = client.post("/api/v1/auth/me/deletion", json={"password": user["password"]}, headers=user["headers"])
+
+    assert asked.status_code == 202, asked.text
+    db_session.expire_all()
+    assert db_session.get(Subscription, "sub_1").status == "canceled"
+    assert _account(db_session, user).tier == "free"
+
+
+def test_a_plan_stripe_no_longer_knows_does_not_hold_up_a_deletion(client, make_user, fake, db_session):
+    user = make_user()
+    _paying(client, db_session, fake, user)
+    del fake.subscriptions["sub_1"]
+
+    asked = client.post("/api/v1/auth/me/deletion", json={"password": user["password"]}, headers=user["headers"])
+
+    assert asked.status_code == 202, asked.text
+    db_session.expire_all()
+    assert db_session.get(Subscription, "sub_1").status == "canceled"
+
+
+def test_an_account_whose_plan_stripe_already_ended_is_removed(client, make_user, fake, db_session):
+    user = make_user()
+    _paying(client, db_session, fake, user)
+    fake.subscriptions["sub_1"]["status"] = "canceled"
+
+    account_deletion.remove(db_session, _account(db_session, user), "test")
+
+    assert db_session.query(User).filter(User.email == user["email"]).first() is None
 
 
 def test_an_account_whose_plan_cannot_be_cancelled_is_kept(client, make_user, fake, db_session):
