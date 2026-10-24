@@ -20,6 +20,7 @@ from app.config import settings
 from app.models import Plan, Subscription, User, utcnow
 
 LIVE = ("active", "trialing", "past_due")
+ENDED = ("canceled", "incomplete_expired")
 
 SUBSCRIPTION_EVENTS = {
     "customer.subscription.created",
@@ -312,18 +313,52 @@ def resume_renewing(db: Session, user: User) -> Subscription | None:
     return record(db, _plain(found))
 
 
+def _ended_at_stripe(db: Session, user: User, row: Subscription) -> bool:
+    try:
+        found = _plain(_client().v1.subscriptions.retrieve(row.id))
+    except stripe.InvalidRequestError:
+        row.status = "canceled"
+        row.ends_at = utcnow()
+        settle_tier(db, user)
+        db.commit()
+        return True
+    except stripe.StripeError as exc:
+        logging.warning("stripe call failed: %s", exc)
+        raise PaymentsDown("The payment provider could not be reached. Try again shortly.") from exc
+    if found.get("status") not in ENDED:
+        return False
+    record(db, found)
+    return True
+
+
+def _change(db: Session, user: User, row: Subscription, make) -> bool:
+    try:
+        make(_client().v1)
+    except stripe.InvalidRequestError as exc:
+        if _ended_at_stripe(db, user, row):
+            return False
+        logging.warning("stripe call failed: %s", exc)
+        raise PaymentsDown("The payment provider could not be reached. Try again shortly.") from exc
+    except stripe.StripeError as exc:
+        logging.warning("stripe call failed: %s", exc)
+        raise PaymentsDown("The payment provider could not be reached. Try again shortly.") from exc
+    return True
+
+
 def stop_renewing(db: Session, user: User) -> None:
     for row in _open(db, user):
-        _call(lambda v1, sid=row.id: v1.subscriptions.update(sid, params={"cancel_at_period_end": True}))
-        row.ends_at = row.current_period_end
-        db.commit()
+        if _change(
+            db, user, row, lambda v1, sid=row.id: v1.subscriptions.update(sid, params={"cancel_at_period_end": True})
+        ):
+            row.ends_at = row.current_period_end
+            db.commit()
 
 
 def end_now(db: Session, user: User) -> None:
     for row in _open(db, user):
-        _call(lambda v1, sid=row.id: v1.subscriptions.cancel(sid))
-        row.status = "canceled"
-        row.ends_at = utcnow()
+        if _change(db, user, row, lambda v1, sid=row.id: v1.subscriptions.cancel(sid)):
+            row.status = "canceled"
+            row.ends_at = utcnow()
 
 
 def _open(db: Session, user: User) -> list:
@@ -331,7 +366,7 @@ def _open(db: Session, user: User) -> list:
         db.query(Subscription)
         .filter(
             Subscription.user_id == user.id,
-            Subscription.status.notin_(("canceled", "incomplete_expired")),
+            Subscription.status.notin_(ENDED),
         )
         .all()
     )
