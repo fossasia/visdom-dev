@@ -5,6 +5,9 @@ A check that answers 200 while the product is unusable is worse than no check,
 so these are about what each one refuses to call healthy.
 """
 
+import re
+import types
+
 import pytest
 
 from app.routers import health
@@ -45,7 +48,7 @@ def test_every_instance_answering_is_healthy(client, monkeypatch):
     answered = client.get(f"{HEALTH}/components")
     assert answered.status_code == 200
     body = answered.json()
-    assert body["checks"].pop("visdom_speed").startswith("answered in ")
+    assert re.fullmatch(r"answered in \d+ ms", body["checks"].pop("visdom_speed"))
     assert body == {
         "status": "healthy",
         "checks": {
@@ -58,14 +61,16 @@ def test_every_instance_answering_is_healthy(client, monkeypatch):
     }
 
 
-def test_visdom_answering_slowly_is_degraded(client, monkeypatch):
+@pytest.mark.parametrize("took, code", [(0.9, 200), (1.0, 503)])
+def test_visdom_answering_in_a_second_or_more_is_degraded(client, monkeypatch, took, code):
     monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097"])
     monkeypatch.setattr(health, "activity_per_instance", lambda timeout: [("visdom-1:8097", True, [])])
     monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: 400.0)
-    monkeypatch.setattr(health, "SLOW_ANSWER_SECONDS", 0.0)
+    ticks = iter([100.0, 100.0 + took])
+    monkeypatch.setattr(health, "time", types.SimpleNamespace(monotonic=lambda: next(ticks)))
     answered = client.get(f"{HEALTH}/components")
-    assert answered.status_code == 503
-    assert answered.json()["checks"]["visdom_speed"].startswith("answered in ")
+    assert answered.status_code == code
+    assert answered.json()["checks"]["visdom_speed"] == f"answered in {took * 1000:.0f} ms"
 
 
 def test_a_machine_busy_for_five_minutes_is_degraded(client, monkeypatch):
