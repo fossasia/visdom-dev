@@ -12,6 +12,8 @@ Health check router to verify the status of the gateway and its database connect
 # pyrefly: ignore [missing-import]
 
 import logging
+import os
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import text
@@ -31,6 +33,15 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 COMPONENT_TIMEOUT = 2.0
 CERTIFICATE_WARNING_DAYS = 30
+SLOW_ANSWER_SECONDS = 1.0
+LOAD_WARNING_PER_CORE = 1.0
+
+
+def load_per_core():
+    try:
+        return os.getloadavg()[1] / (os.cpu_count() or 1)
+    except (AttributeError, OSError):
+        return None
 
 
 @router.get("", status_code=status.HTTP_200_OK)
@@ -80,13 +91,31 @@ def component_health(response: Response, db: Session = Depends(get_db)):
         checks["database"] = "unreachable"
 
     addresses = instance_addresses()
+    speed_ok = True
     if addresses:
+        started = time.monotonic()
         answered = sum(1 for _address, ok, _entries in activity_per_instance(COMPONENT_TIMEOUT) if ok)
+        took = time.monotonic() - started
         visdom_ok = answered == len(addresses)
         checks["visdom"] = f"{answered} of {len(addresses)} answering"
+        if visdom_ok:
+            checks["visdom_speed"] = f"answered in {took * 1000:.0f} ms"
+            if took >= SLOW_ANSWER_SECONDS:
+                speed_ok = False
+                logging.warning("visdom took %.1f seconds to answer the health check", took)
     else:
         visdom_ok = True
         checks["visdom"] = "no instances configured"
+
+    load_ok = True
+    per_core = load_per_core()
+    if per_core is None:
+        checks["load"] = "unknown"
+    else:
+        checks["load"] = f"{per_core:.2f} per core over 5 minutes"
+        if per_core >= LOAD_WARNING_PER_CORE:
+            load_ok = False
+            logging.warning("the machine has been overloaded, %.2f per core over 5 minutes", per_core)
 
     setup_problem = internal_setup_problem() if addresses else None
     if setup_problem:
@@ -116,7 +145,9 @@ def component_health(response: Response, db: Session = Depends(get_db)):
             logging.exception("component health could not read the metering heartbeat")
             metering_ok, checks["metering"] = False, "unknown"
 
-    healthy = database_ok and visdom_ok and metering_ok and certificate_ok and not setup_problem
+    healthy = (
+        database_ok and visdom_ok and speed_ok and load_ok and metering_ok and certificate_ok and not setup_problem
+    )
     if not healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "healthy" if healthy else "degraded", "checks": checks}

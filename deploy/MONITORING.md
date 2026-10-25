@@ -21,8 +21,20 @@ catches it.
 A healthy answer:
 
 ```json
-{"status": "healthy", "checks": {"database": "ok", "visdom": "3 of 3 answering", "metering": "ok"}}
+{"status": "healthy", "checks": {"database": "ok", "visdom": "3 of 3 answering", "visdom_speed": "answered in 12 ms", "load": "0.31 per core over 5 minutes", "metering": "ok"}}
 ```
+
+It also answers 503 when the machine is overloaded, so the same monitor tells
+you when it is time for a bigger machine:
+
+- `visdom_speed`: the visdom instances took a second or more to answer. A
+  healthy instance answers in milliseconds, so this means plots are reaching
+  people late.
+- `load`: the machine's 5 minute load average is at or above one per core,
+  meaning every core has been busy for minutes, not for a moment.
+
+Both are logged as warnings too. If one fires and nothing is broken, the box
+needs more cores.
 
 **Setting it up**, about five minutes: make a free account at uptimerobot.com or
 betterstack.com, add an HTTPS monitor on
@@ -73,5 +85,5 @@ only for instances that also restarted, since the rest keep counting.
 
 - **Certificate expiry.** Caddy renews on its own, and an expired certificate
   would show up as the uptime check failing, which is late but not silent.
-- **Slow.** These checks are up or down only. A deployment that answers every
-  request in nine seconds is "up" to both of them.
+- **A slow console.** The speed check times visdom, not the gateway, so console
+  pages that take seconds while visdom answers quickly still look healthy.

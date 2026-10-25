@@ -5,9 +5,16 @@ A check that answers 200 while the product is unusable is worse than no check,
 so these are about what each one refuses to call healthy.
 """
 
+import pytest
+
 from app.routers import health
 
 HEALTH = "/api/v1/health"
+
+
+@pytest.fixture(autouse=True)
+def quiet_machine(monkeypatch):
+    monkeypatch.setattr(health, "load_per_core", lambda: 0.25)
 
 
 def test_the_cheap_check_says_the_database_is_reachable(client):
@@ -37,15 +44,44 @@ def test_every_instance_answering_is_healthy(client, monkeypatch):
     monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: 400.5)
     answered = client.get(f"{HEALTH}/components")
     assert answered.status_code == 200
-    assert answered.json() == {
+    body = answered.json()
+    assert body["checks"].pop("visdom_speed").startswith("answered in ")
+    assert body == {
         "status": "healthy",
         "checks": {
             "database": "ok",
             "visdom": "2 of 2 answering",
+            "load": "0.25 per core over 5 minutes",
             "internal_certificate": "400 days left",
             "metering": "off",
         },
     }
+
+
+def test_visdom_answering_slowly_is_degraded(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: ["visdom-1:8097"])
+    monkeypatch.setattr(health, "activity_per_instance", lambda timeout: [("visdom-1:8097", True, [])])
+    monkeypatch.setattr(health, "certificate_days_left", lambda address, timeout: 400.0)
+    monkeypatch.setattr(health, "SLOW_ANSWER_SECONDS", 0.0)
+    answered = client.get(f"{HEALTH}/components")
+    assert answered.status_code == 503
+    assert answered.json()["checks"]["visdom_speed"].startswith("answered in ")
+
+
+def test_a_machine_busy_for_five_minutes_is_degraded(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: [])
+    monkeypatch.setattr(health, "load_per_core", lambda: 1.4)
+    answered = client.get(f"{HEALTH}/components")
+    assert answered.status_code == 503
+    assert answered.json()["checks"]["load"] == "1.40 per core over 5 minutes"
+
+
+def test_a_load_that_cannot_be_read_is_not_called_broken(client, monkeypatch):
+    monkeypatch.setattr(health, "instance_addresses", lambda: [])
+    monkeypatch.setattr(health, "load_per_core", lambda: None)
+    answered = client.get(f"{HEALTH}/components")
+    assert answered.status_code == 200
+    assert answered.json()["checks"]["load"] == "unknown"
 
 
 def test_an_internal_certificate_near_its_end_is_degraded(client, monkeypatch):
