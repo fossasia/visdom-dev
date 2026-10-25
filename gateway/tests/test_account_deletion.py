@@ -156,6 +156,7 @@ def test_after_the_deadline_the_account_and_its_lone_workspaces_go(
     trail = db_session.query(AdminAction).filter(AdminAction.row_id == user["id"]).one()
     assert trail.action == "delete"
     assert trail.changes["workspaces_removed"] == [alone["slug"]]
+    assert trail.changes["username"] == user["username"]
 
     members = client.get(f"{WORKSPACES}/{shared['id']}/members", headers=other["headers"]).json()
     assert [m["user_id"] for m in members] == [other["id"]]

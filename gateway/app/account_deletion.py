@@ -217,6 +217,7 @@ def remove(db: Session, user: User, reason: str, staff_id=None, staff_email=None
             changes={
                 "reason": reason,
                 "email": user.email,
+                "username": user.username,
                 "workspaces_removed": removed,
                 "bytes_freed": freed,
             },

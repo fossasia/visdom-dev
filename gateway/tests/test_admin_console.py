@@ -144,6 +144,40 @@ def test_the_audit_trail_still_renders_once_the_row_is_gone(admin_client):
     assert "Suspended account long-gone@example.com (deleted)." in trail.text
 
 
+def test_a_deleted_account_is_named_by_email_and_username(admin_client):
+    from app.models import AdminAction
+
+    db = admin_client.staff_db
+    db.add(
+        AdminAction(
+            id=uuid.uuid4(),
+            action="delete",
+            model="User",
+            row_id=str(uuid.uuid4()),
+            changes={"email": "gone@example.com", "username": "gone-user"},
+        )
+    )
+    db.commit()
+
+    trail = admin_client.get("/admin/admin-action/list", follow_redirects=False)
+    assert trail.status_code == 200
+    assert "Deleted account gone@example.com (gone-user)." in trail.text
+
+
+def test_a_deleted_account_with_no_name_kept_does_not_show_its_id(admin_client):
+    from app.models import AdminAction
+
+    row_id = str(uuid.uuid4())
+    db = admin_client.staff_db
+    db.add(AdminAction(id=uuid.uuid4(), action="delete", model="User", row_id=row_id, changes={}))
+    db.commit()
+
+    trail = admin_client.get("/admin/admin-action/list", follow_redirects=False)
+    assert trail.status_code == 200
+    assert "Deleted account (name not recorded)." in trail.text
+    assert row_id not in trail.text
+
+
 def test_the_audit_trail_names_a_whole_page_in_a_fixed_number_of_queries(admin_client):
     from sqlalchemy import event
 

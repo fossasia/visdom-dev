@@ -1084,9 +1084,14 @@ def _audit_subject(model, name):
     if label is not None:
         return label
 
-    named = (model.changes or {}).get("email")
+    changes = model.changes or {}
+    email, username = changes.get("email"), changes.get("username")
+    named = f"{email} ({username})" if email and username else email or username
+    deleting = str(model.action or "").lower() == "delete"
     if named:
-        return f"{named} (deleted)"
+        return named if deleting else f"{named} (deleted)"
+    if kind == "user":
+        return "(name not recorded)" if deleting else "(deleted, name not recorded)"
     return f"{model.row_id} (deleted)"
 
 
