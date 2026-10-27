@@ -1,19 +1,29 @@
-# Nginx reverse proxy (Milestone 3, item 1)
+# Nginx reverse proxy for local development
 
 Collapses the three dev services behind a single origin so the console and visdom
-share one session cookie — no CORS, no token hand-off.
+share one session cookie: no CORS, no token hand-off.
+
+This config is for running the pieces by hand on one machine. The Docker stack
+uses its own, `deploy/nginx.conf.template`, which serves the built console and
+spreads workspaces across several visdom instances.
 
 | Path            | Upstream         | Port  |
 | --------------- | ---------------- | ----- |
 | `/`             | console frontend | 5173  |
 | `/api/v1/*`     | console gateway  | 8085  |
+| `/admin/*`      | staff console, in the gateway | 8085 |
+| `/vis/w/<slug>/*` | visdom server, for that workspace | 8097 |
 | `/vis/*`        | visdom server    | 8097  |
 
 Unified origin: **http://localhost:8080**
 
 `/vis/*` is gated by an nginx `auth_request` subrequest to
 `GET /api/v1/auth/verify`, which checks the `session_token` cookie the gateway
-now sets at login/refresh. Unauthenticated requests are redirected to `/login`.
+sets at login and refresh, or an API key. Unauthenticated browser requests are
+redirected to `/login`; API clients get a 401.
+
+The visdom server needs `VISDOM_GATEWAY_URL=http://localhost:8085` in its
+environment so it can ask the gateway which workspace a request belongs to.
 
 ## Run the stack
 

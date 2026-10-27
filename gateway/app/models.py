@@ -56,6 +56,9 @@ class Plan(Base):
     limits = Column(JSON, nullable=False, default=dict)
     features = Column(JSON, nullable=False, default=list)
     retention_days = Column(Integer, nullable=True)
+    stripe_price_id = Column(String, nullable=True)
+
+    __table_args__ = (UniqueConstraint("stripe_price_id", name="uq_plans_stripe_price_id"),)
 
 
 class User(Base):
@@ -65,7 +68,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    stripe_customer_id = Column(String, nullable=True)
+    stripe_customer_id = Column(String, nullable=True, index=True)
     tier = Column(String, ForeignKey("plans.id", name="fk_users_tier_plans"), default="free")
     is_staff = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, nullable=False, server_default="true")
@@ -73,6 +76,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
+    bypass_limits = Column(Boolean, default=False, nullable=False, server_default="false")
     trashed_at = Column(DateTime(timezone=True), nullable=True)
     trashed_by = Column(String, nullable=True)
 
@@ -82,6 +86,22 @@ class User(Base):
 
     api_keys = relationship("APIKey", back_populates="owner", cascade="all, delete-orphan")
     memberships = relationship("Membership", back_populates="user", cascade="all, delete-orphan")
+    subscriptions = relationship("Subscription", cascade="all, delete-orphan")
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_id = Column(String, ForeignKey("plans.id"), nullable=True)
+    price_id = Column(String, nullable=True)
+    status = Column(String, nullable=False)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    ends_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class APIKey(Base):
@@ -310,3 +330,20 @@ class Heartbeat(Base):
 
     name = Column(String, primary_key=True)
     beat_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class PlatformSwitch(Base):
+    """Something staff turn on or off for every account at once.
+
+    Kept in the database rather than in the environment, so turning one on is a
+    click in the admin console that takes effect on the next request, with no
+    deploy and no restart. Who last changed it is copied in as text, for the
+    same reason the audit trail copies it: the staff account may not outlive it.
+    """
+
+    __tablename__ = "platform_switches"
+
+    name = Column(String, primary_key=True)
+    is_on = Column(Boolean, nullable=False, default=False, server_default="false")
+    changed_at = Column(DateTime(timezone=True), nullable=True)
+    changed_by = Column(String, nullable=True)

@@ -35,6 +35,7 @@ from types import SimpleNamespace
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import bypass
 from app.admin.activity import RETIRE_PATH, admin_call, instance_addresses
 from app.config import settings
 from app.database import SessionLocal, engine
@@ -54,9 +55,16 @@ def plan_for(db: Session, workspace: Workspace) -> Plan | None:
 
 
 def window_for(db: Session, workspace: Workspace) -> int | None:
-    """How many days of work this workspace keeps, or None for all of it."""
+    """How many days of work this workspace keeps, or None for all of it.
+
+    All of it, too, while the owner's limits are bypassed. How long work is
+    kept is one of the things a plan limits, and a promotion that lifted the
+    rest while still deleting old work would not be what it said it was.
+    """
     plan = plan_for(db, workspace)
-    return plan.retention_days if plan is not None else None
+    if plan is None or bypass.applies_to(db, workspace.creator):
+        return None
+    return plan.retention_days
 
 
 def enforcing(today: datetime.date | None = None) -> bool:
@@ -235,7 +243,7 @@ def notice(db: Session, workspace: Workspace, ask=ask_instance, today: datetime.
     """
     today = today or utcnow().date()
     plan = plan_for(db, workspace)
-    days = plan.retention_days if plan is not None else None
+    days = window_for(db, workspace)
     result = {
         "plan": plan.name if plan is not None else None,
         "days": days,

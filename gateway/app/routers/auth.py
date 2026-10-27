@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app import account_deletion, password_reset
+from app import account_deletion, password_reset, payments
 from app import email as outbound
 from app.admin.activity import evict_workspace
 from app.config import settings
@@ -26,7 +26,7 @@ from app.dependencies import (
     resolve_active_api_key,
     user_for_access_token,
 )
-from app.models import APIKey, Membership, User, WorkspaceInvite, utcnow
+from app.models import APIKey, Membership, Plan, User, WorkspaceInvite, utcnow
 from app.schemas import (
     AccountDeletionRequest,
     DeletionPreview,
@@ -473,7 +473,16 @@ def _preview(db: Session, user: User) -> dict:
             DeletionWorkspace(id=ws.id, name=ws.name, slug=ws.slug)
             for ws in state["leaving_with"]
         ],
+        "renewing_plan": _renewing_plan(db, user),
     }
+
+
+def _renewing_plan(db: Session, user: User) -> str | None:
+    live = payments.current(db, user)
+    if live is None or live.ends_at is not None:
+        return None
+    plan = db.get(Plan, live.plan_id) if live.plan_id else None
+    return plan.name if plan else "paid"
 
 
 @router.get("/me/deletion", response_model=DeletionPreview)
@@ -510,7 +519,13 @@ def request_account_deletion(
             detail=f"Put someone else in charge of {names} first.",
         )
 
-    delete_after = account_deletion.request(db, current_user)
+    try:
+        delete_after = account_deletion.request(db, current_user)
+    except (payments.PaymentsDown, payments.PaymentsOff) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Your paid plan could not be stopped, so the account was not deleted. Try again shortly.",
+        ) from exc
     for ws in preview["leaving_with"]:
         evict_workspace(ws.slug, "this account is being deleted")
 
