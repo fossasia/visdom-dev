@@ -46,14 +46,18 @@ fetchSuggestion();
   }, []);
 
   useEffect(() => {
+    let isCurrent = true;
+
     if (usernameMode !== 'custom' || !customUsername) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
+      setCheckingUsername(false);
       return;
     }
 
     if (!USERNAME_PATTERN.test(customUsername)) {
       setUsernameAvailable(false);
+      setCheckingUsername(false);
       return;
     }
 
@@ -61,15 +65,24 @@ fetchSuggestion();
     const timeout = setTimeout(async () => {
       try {
         const response = await api.get('/auth/username-availability', { params: { username: customUsername } });
-        setUsernameAvailable(response.data.available);
+        if (isCurrent) {
+          setUsernameAvailable(response.data.available);
+        }
       } catch (err) { // eslint-disable-line no-unused-vars
-        setUsernameAvailable(null);
+        if (isCurrent) {
+          setUsernameAvailable(null);
+        }
       } finally {
-        setCheckingUsername(false);
+        if (isCurrent) {
+          setCheckingUsername(false);
+        }
       }
     }, 400);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      isCurrent = false;
+      clearTimeout(timeout);
+    };
   }, [customUsername, usernameMode]);
 
   const handleEmailBlur = () => {
