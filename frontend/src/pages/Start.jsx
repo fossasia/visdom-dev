@@ -39,8 +39,8 @@ const FEATURES = [
   },
   {
     icon: Link2,
-    title: 'Read-only links',
-    text: 'Show a result to someone outside the team without giving them an account.',
+    title: 'Join links',
+    text: 'Share one link to bring people in. Each person who opens it asks to join, and an admin approves them.',
   },
   {
     icon: FlaskConical,
