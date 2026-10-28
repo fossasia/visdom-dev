@@ -29,7 +29,7 @@ describe('Start page', () => {
   it('is what a signed-out visitor sees at the root', () => {
     visit('/');
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Watch your experiments live, together.' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Watch training live, together.' })).toBeInTheDocument();
     for (const link of screen.getAllByRole('link', { name: 'Get started' })) {
       expect(link).toHaveAttribute('href', '/register');
     }
@@ -48,7 +48,7 @@ describe('Start page', () => {
   it('still sends a signed-out link with a query to sign in', () => {
     visit('/?tab=billing');
 
-    expect(screen.queryByRole('heading', { level: 1, name: 'Watch your experiments live, together.' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Watch training live, together.' })).not.toBeInTheDocument();
     expect(window.location.pathname).toBe('/login');
   });
 
@@ -56,6 +56,6 @@ describe('Start page', () => {
     visit('/', { id: 1, email: 'test@example.com' });
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.queryByText('Watch your experiments live, together.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Watch training live, together.')).not.toBeInTheDocument();
   });
 });
