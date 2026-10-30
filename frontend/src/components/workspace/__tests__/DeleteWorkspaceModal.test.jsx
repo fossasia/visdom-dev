@@ -53,8 +53,7 @@ describe('DeleteWorkspaceModal', () => {
       const user = userEvent.setup();
       renderModal();
 
-      const closeButton = document.querySelector('.gc-modal-close');
-      await user.click(closeButton);
+      await user.click(screen.getByRole('button', { name: 'Close' }));
 
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
     });

@@ -44,8 +44,7 @@ describe('CreateWorkspaceModal', () => {
       const user = userEvent.setup();
       renderModal();
 
-      const closeButton = document.querySelector('.gc-modal-close');
-      await user.click(closeButton);
+      await user.click(screen.getByRole('button', { name: 'Close' }));
 
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
     });
@@ -82,6 +81,7 @@ describe('CreateWorkspaceModal', () => {
       renderModal();
 
       await user.type(screen.getByPlaceholderText('NLP Labs'), '   ');
+      await user.type(screen.getByPlaceholderText('nlp-labs'), 'valid-slug');
       await user.click(screen.getByRole('button', { name: 'Create Workspace' }));
 
       expect(mocks.api.post).not.toHaveBeenCalled();
