@@ -55,7 +55,7 @@ const CreateWorkspaceModal = ({ onClose, onCreated }) => {
     <ModalPortal onClose={onClose}>
       <div className="gc-modal-header">
         <span className="gc-modal-title">Create Workspace</span>
-        <button className="gc-modal-close" onClick={onClose} type="button">
+        <button className="gc-modal-close" onClick={onClose} type="button" aria-label="Close">
           <X size={16} />
         </button>
       </div>
