@@ -7,6 +7,7 @@ import ToastContainer from './components/toast/ToastContainer';
 import './css/index.css';
 import './css/workspaces.css';
 import './css/toast.css';
+import './css/start.css';
 import App from './App.jsx';
 
 createRoot(document.getElementById('root')).render(
