@@ -1,6 +1,9 @@
 # Copyright 2017-present, The Visdom Authors
 """What staff can do from the console: suspend, manage memberships and staff
 accounts, set a password, hand out permissions, and read the audit trail."""
+import logging
+import threading
+import time
 import uuid
 
 import pytest
@@ -335,6 +338,125 @@ def test_suspending_a_workspace_through_the_form_actually_saves(admin_client):
 
     admin_client.staff_db.expire_all()
     assert admin_client.staff_db.get(Workspace, workspace.id).is_active is False
+
+
+def _suspending_the_form(admin_client, monkeypatch):
+    """Make the call the console is expected to make visible to a test."""
+    closed = []
+    monkeypatch.setattr(
+        panel.activity,
+        "evict_workspace",
+        lambda slug, reason=None, timeout=None: closed.append(slug) or 1,
+    )
+    return closed
+
+
+def _evictions_settled(closed):
+    """The console asks for the eviction in the background, so give it a moment."""
+    deadline = time.monotonic() + 5
+    while not closed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return closed
+
+
+def test_suspending_a_workspace_through_the_form_closes_its_open_sockets(admin_client, monkeypatch):
+    """Refusing new requests is not the whole of a suspension.
+
+    An instance stops serving a suspended workspace at its next resolve, but a
+    tab that already has it open keeps its socket and is never asked again. The
+    console has to close those, and the only place it knows a workspace was
+    just suspended is this save.
+    """
+    closed = _suspending_the_form(admin_client, monkeypatch)
+    workspace = Workspace(id=uuid.uuid4(), name="Loud", slug="loud-one", is_active=True)
+    admin_client.staff_db.add(workspace)
+    admin_client.staff_db.commit()
+
+    saved = admin_client.post(
+        f"/admin/workspace/edit/{workspace.id}",
+        data={"is_active": "false"},
+        follow_redirects=False,
+    )
+    assert saved.status_code in (302, 303), saved.text
+    assert _evictions_settled(closed) == ["loud-one"]
+
+
+def test_a_suspension_save_does_not_wait_for_an_instance(admin_client, monkeypatch):
+    """The save asks for the eviction and returns: a slow instance costs
+    promptness, not a stalled admin POST."""
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_evict(slug, reason=None, timeout=None):
+        started.set()
+        release.wait(10)
+        return 1
+
+    monkeypatch.setattr(panel.activity, "evict_workspace", slow_evict)
+    workspace = Workspace(id=uuid.uuid4(), name="Stuck", slug="stuck-one", is_active=True)
+    admin_client.staff_db.add(workspace)
+    admin_client.staff_db.commit()
+
+    try:
+        began = time.monotonic()
+        saved = admin_client.post(
+            f"/admin/workspace/edit/{workspace.id}",
+            data={"is_active": "false"},
+            follow_redirects=False,
+        )
+        waited = time.monotonic() - began
+    finally:
+        release.set()
+
+    assert saved.status_code in (302, 303), saved.text
+    assert waited < 2.0, f"the save waited {waited:.1f}s for the instance"
+    assert started.wait(5), "the eviction was never asked for"
+
+
+def test_an_eviction_that_fails_is_written_down(admin_client, monkeypatch, caplog):
+    """Nothing waits on the eviction, so a failure has no caller to raise into.
+
+    Left alone it surfaces as the loop's own "Task exception was never
+    retrieved" line, which does not say which workspace it was for. The done
+    callback is the only place that still knows.
+    """
+
+    def broken_evict(slug, reason=None, timeout=None):
+        raise RuntimeError("the instance refused the eviction")
+
+    monkeypatch.setattr(panel.activity, "evict_workspace", broken_evict)
+    workspace = Workspace(id=uuid.uuid4(), name="Broken", slug="broken-one", is_active=True)
+    admin_client.staff_db.add(workspace)
+    admin_client.staff_db.commit()
+
+    with caplog.at_level(logging.WARNING):
+        saved = admin_client.post(
+            f"/admin/workspace/edit/{workspace.id}",
+            data={"is_active": "false"},
+            follow_redirects=False,
+        )
+        assert saved.status_code in (302, 303), saved.text
+        deadline = time.monotonic() + 5
+        while not caplog.records and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    lines = [record.getMessage() for record in caplog.records]
+    assert any("broken-one" in line for line in lines), lines
+
+
+def test_a_save_that_leaves_a_workspace_active_closes_nothing(admin_client, monkeypatch):
+    closed = _suspending_the_form(admin_client, monkeypatch)
+    workspace = Workspace(id=uuid.uuid4(), name="Quiet", slug="quiet-one", is_active=True)
+    admin_client.staff_db.add(workspace)
+    admin_client.staff_db.commit()
+
+    saved = admin_client.post(
+        f"/admin/workspace/edit/{workspace.id}",
+        data={"is_active": "true"},
+        follow_redirects=False,
+    )
+    assert saved.status_code in (302, 303), saved.text
+    assert closed == []
 
 
 def _account(db, email="locked-out@example.com", password="their-own-password"):
