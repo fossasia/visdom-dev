@@ -43,8 +43,10 @@ const AuthShell = ({ subtitle, children }) => {
       <div className="visdom-panel auth-panel">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <h2 className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
-            <span>visdom</span>
+            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'inherit', textDecoration: 'none' }}>
+              <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
+              <span>visdom</span>
+            </Link>
           </h2>
           <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{subtitle}</div>
         </div>

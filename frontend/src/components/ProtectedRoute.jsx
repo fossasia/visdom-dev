@@ -2,7 +2,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-export const ProtectedRoute = ({ children }) => {
+export const ProtectedRoute = ({ children, signedOut }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -34,6 +34,10 @@ export const ProtectedRoute = ({ children }) => {
         `}</style>
       </div>
     );
+  }
+
+  if (!user && signedOut && !location.search) {
+    return signedOut;
   }
 
   if (!user) {

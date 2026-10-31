@@ -9,6 +9,7 @@ import LegalPage from './pages/LegalPage';
 import { COOKIES, PRIVACY } from './content/legal';
 import Dashboard from './pages/Dashboard';
 import JoinWorkspace from './pages/JoinWorkspace';
+import Start from './pages/Start';
 import NotFound from './pages/NotFound';
 
 function App() {
@@ -24,7 +25,7 @@ function App() {
         <Route
           path="/"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute signedOut={<Start />}>
               <Dashboard />
             </ProtectedRoute>
           }
