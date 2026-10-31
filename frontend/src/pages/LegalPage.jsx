@@ -1,8 +1,10 @@
 /* Copyright 2017-present, The Visdom Authors */
 import { Link, useLocation } from 'react-router-dom';
 import { UPDATED } from '../content/legal';
+import usePageTitle from '../hooks/usePageTitle';
 
 const LegalPage = ({ title, sections }) => {
+  usePageTitle(title);
   const location = useLocation();
   const kept = { from: location.state?.from };
 
