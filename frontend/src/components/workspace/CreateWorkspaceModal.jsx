@@ -64,8 +64,9 @@ const CreateWorkspaceModal = ({ onClose, onCreated }) => {
 
       <form onSubmit={handleSubmit}>
         <div className="gc-field">
-          <label className="gc-label">Workspace Name</label>
+          <label htmlFor="workspace-name" className="gc-label">Workspace Name</label>
           <input
+            id="workspace-name"
             type="text"
             required
             autoFocus
@@ -77,8 +78,9 @@ const CreateWorkspaceModal = ({ onClose, onCreated }) => {
         </div>
 
         <div className="gc-field">
-          <label className="gc-label">Slug</label>
+          <label htmlFor="workspace-slug" className="gc-label">Slug</label>
           <input
+            id="workspace-slug"
             type="text"
             required
             className="gc-input"

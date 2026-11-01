@@ -165,10 +165,11 @@ fetchSuggestion();
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-email" style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Email Address
             </label>
             <input
+              id="register-email"
               type="email"
               required
               className="visdom-input"
@@ -180,9 +181,9 @@ fetchSuggestion();
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <div style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Username
-            </label>
+            </div>
 
             <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
               <button
@@ -244,6 +245,7 @@ fetchSuggestion();
                   type="text"
                   className="visdom-input"
                   placeholder="your_username"
+                  aria-label="Username"
                   value={customUsername}
                   onChange={(e) => setCustomUsername(e.target.value.trimStart())}
                   autoComplete="off"
@@ -273,11 +275,12 @@ fetchSuggestion();
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-password" style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Password
             </label>
             <PasswordInput
               required
+              id="register-password"
               autoComplete="new-password"
               placeholder="Minimum 6 characters"
               value={password}
@@ -286,11 +289,12 @@ fetchSuggestion();
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-confirm-password" style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Confirm Password
             </label>
             <PasswordInput
               required
+              id="register-confirm-password"
               autoComplete="new-password"
               placeholder="Re-enter password"
               value={confirmPassword}
