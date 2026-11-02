@@ -102,5 +102,21 @@ def send_password_reset_email(to_email: str, reset_url: str, minutes: int) -> No
     )
 
 
+def send_retention_warning_email(
+    to_email: str, workspace_name: str, days: int, envs: list, starts_on, url: str
+) -> None:
+    names = "\n".join(f"  - {env}" for env in envs)
+    when = f"on {starts_on.isoformat()}" if starts_on else "in the next few days"
+    send_later(
+        to_email,
+        f"Old environments in {workspace_name} will be removed soon",
+        (
+            f"Your plan keeps {days} days of work. These environments in "
+            f"\"{workspace_name}\" will be removed {when}:\n\n{names}\n\n"
+            f"Open the workspace to save anything you want to keep:\n{url}"
+        ),
+    )
+
+
 def build_share_link_url(link_id) -> str:
     return f"{settings.FRONTEND_URL}/share/{link_id}"

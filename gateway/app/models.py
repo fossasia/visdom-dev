@@ -141,6 +141,7 @@ class Workspace(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     is_active = Column(Boolean, default=True, nullable=False, server_default="true")
     trashed_at = Column(DateTime(timezone=True), nullable=True)
+    retention_warned_at = Column(DateTime(timezone=True), nullable=True)
 
     creator = relationship("User", foreign_keys=[created_by])
     memberships = relationship("Membership", back_populates="workspace", cascade="all, delete-orphan")

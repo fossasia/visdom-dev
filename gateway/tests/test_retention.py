@@ -283,3 +283,62 @@ def test_a_sweep_runs_without_the_lock_on_a_database_that_has_none(monkeypatch, 
     monkeypatch.setattr(db_session, "close", lambda: None)
 
     assert retention.sweep_once()["visited"] == 0
+
+
+NOW = datetime.datetime(2026, 10, 1, 9, 0, tzinfo=datetime.timezone.utc)
+
+
+@pytest.fixture
+def mailbox(monkeypatch):
+    sent = []
+    monkeypatch.setattr(retention.outbound, "send_later", lambda to, subject, body: sent.append((to, body)))
+    return sent
+
+
+def test_the_owner_is_emailed_about_what_goes_next(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    owner = _owner(db_session, "free")
+    _workspace(db_session, owner, slug="mine")
+
+    assert retention.warn_owners(db_session, ask=Recorder(envs=["old-run"]), now=NOW) == 1
+    assert len(mailbox) == 1
+    to, body = mailbox[0]
+    assert to == owner.email
+    assert "old-run" in body
+    assert "7 days" in body
+
+
+def test_an_owner_is_warned_once_per_window(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    _workspace(db_session, _owner(db_session, "free"))
+    ask = Recorder()
+
+    retention.warn_owners(db_session, ask=ask, now=NOW)
+    retention.warn_owners(db_session, ask=ask, now=NOW + datetime.timedelta(days=1))
+    assert len(mailbox) == 1
+
+    retention.warn_owners(db_session, ask=ask, now=NOW + datetime.timedelta(days=3))
+    assert len(mailbox) == 2
+
+
+def test_nobody_is_emailed_when_nothing_is_going(db_session, instances, rules, mailbox):
+    rules(enforce=True)
+    _workspace(db_session, _owner(db_session, "free"))
+    assert retention.warn_owners(db_session, ask=Recorder(envs=[]), now=NOW) == 0
+    assert retention.warn_owners(db_session, ask=lambda *args: None, now=NOW) == 0
+    assert mailbox == []
+
+
+def test_nobody_is_emailed_before_deleting_is_switched_on(db_session, instances, rules, mailbox):
+    rules(enforce=False)
+    _workspace(db_session, _owner(db_session, "free"))
+    _workspace(db_session, _owner(db_session, "enterprise"), slug="forever")
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 0
+    assert mailbox == []
+
+
+def test_a_scheduled_start_names_the_day(db_session, instances, rules, mailbox):
+    rules(enforce=True, starts=NOW.date() + datetime.timedelta(days=5))
+    _workspace(db_session, _owner(db_session, "free"))
+    retention.warn_owners(db_session, ask=Recorder(), now=NOW)
+    assert "on 2026-10-06" in mailbox[0][1]
