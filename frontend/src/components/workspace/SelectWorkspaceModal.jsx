@@ -80,15 +80,15 @@ const SelectWorkspaceModal = ({ workspaces, activeWorkspace, onClose, onSwitch, 
   };
 
   return (
-    <ModalPortal onClose={onClose} wide>
+    <ModalPortal onClose={onClose} wide aria-labelledby="select-workspace-modal-title">
       <div className="gc-modal-header">
-        <span className="gc-modal-title">Select a workspace</span>
+        <span id="select-workspace-modal-title" className="gc-modal-title">Select a workspace</span>
         <div className="gc-flex-row-center">
           <button type="button" className="gc-btn gc-btn-primary" onClick={() => setShowCreateModal(true)}>
             <Plus size={14} />
             New Workspace
           </button>
-          <button className="gc-modal-close" onClick={onClose} type="button">
+          <button className="gc-modal-close" onClick={onClose} type="button" aria-label="Close">
             <X size={16} />
           </button>
         </div>

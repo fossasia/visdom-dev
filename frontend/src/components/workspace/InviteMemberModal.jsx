@@ -34,10 +34,10 @@ const InviteMemberModal = ({ workspaceId, onClose, onInvited }) => {
   };
 
   return (
-    <ModalPortal onClose={onClose}>
+    <ModalPortal onClose={onClose} aria-labelledby="invite-member-modal-title">
       <div className="gc-modal-header">
-        <span className="gc-modal-title">Invite Collaborator</span>
-        <button className="gc-modal-close" onClick={onClose} type="button">
+        <span id="invite-member-modal-title" className="gc-modal-title">Invite Collaborator</span>
+        <button className="gc-modal-close" onClick={onClose} type="button" aria-label="Close">
           <X size={16} />
         </button>
       </div>

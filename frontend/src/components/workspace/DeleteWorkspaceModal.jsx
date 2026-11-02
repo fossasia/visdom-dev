@@ -32,12 +32,12 @@ const DeleteWorkspaceModal = ({ workspace, onClose, onDeleted }) => {
   };
 
   return (
-    <ModalPortal onClose={onClose}>
+    <ModalPortal onClose={onClose} aria-labelledby="delete-workspace-modal-title">
       <div className="gc-modal-header">
-        <span className="gc-modal-title gc-text-danger">
+        <span id="delete-workspace-modal-title" className="gc-modal-title gc-text-danger">
           Delete Workspace
         </span>
-        <button className="gc-modal-close" onClick={onClose} type="button">
+        <button className="gc-modal-close" onClick={onClose} type="button" aria-label="Close">
           <X size={16} />
         </button>
       </div>

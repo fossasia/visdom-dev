@@ -107,10 +107,10 @@ const ProfileModal = ({ onClose }) => {
   };
 
   return (
-    <ModalPortal onClose={onClose}>
+    <ModalPortal onClose={onClose} aria-labelledby="profile-modal-title">
       <div className="gc-modal-header">
-        <span className="gc-modal-title">Profile</span>
-        <button className="gc-modal-close" onClick={onClose} type="button">
+        <span id="profile-modal-title" className="gc-modal-title">Profile</span>
+        <button className="gc-modal-close" onClick={onClose} type="button" aria-label="Close">
           <X size={16} />
         </button>
       </div>
