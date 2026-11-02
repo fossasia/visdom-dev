@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import ModalPortal from '../components/ModalPortal';
 import PasswordInput from '../components/PasswordInput';
 
@@ -52,20 +52,11 @@ export const ConfirmProvider = ({ children }) => {
     close(state?.input ? inputValue : true);
   }, [close, state, inputValue]);
 
-  useEffect(() => {
-    if (!state) return;
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') handleCancel();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [state, handleCancel]);
-
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
       {state && (
-        <ModalPortal onClose={handleCancel}>
+        <ModalPortal onClose={handleCancel} aria-labelledby="confirm-modal-title">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -73,7 +64,7 @@ export const ConfirmProvider = ({ children }) => {
             }}
           >
             <div className="gc-modal-header gc-confirm-header">
-              <span className={`gc-modal-title ${state.danger ? 'gc-text-danger' : ''}`}>
+              <span id="confirm-modal-title" className={`gc-modal-title ${state.danger ? 'gc-text-danger' : ''}`}>
                 {state.title}
               </span>
             </div>

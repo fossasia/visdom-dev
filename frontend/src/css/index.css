@@ -599,6 +599,10 @@ body {
   padding: 24px;
 }
 
+.gc-modal:focus {
+  outline: none;
+}
+
 .gc-modal-wide {
   max-width: 520px;
 }
