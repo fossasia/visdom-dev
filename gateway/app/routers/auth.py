@@ -97,6 +97,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
                 workspace_id=invite.workspace_id,
                 role=invite.role,
                 status="pending_acceptance",
+                invited_at=invite.created_at,
             )
         )
         db.delete(invite)

@@ -9,7 +9,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import account_deletion, payments, retention, usage_rollup
+from app import account_deletion, invites, payments, retention, usage_rollup
 from app.admin import mount_admin
 from app.admin.activity import activity_per_instance
 from app.config import settings
@@ -83,6 +83,12 @@ async def _delete_accounts_forever(hours: int) -> None:
                 logging.info("deleted %d account(s) at the end of their waiting period", erased)
         except Exception:
             logging.exception("account deletion tick failed")
+        try:
+            expired = await asyncio.to_thread(invites.expire_once)
+            if expired:
+                logging.info("removed %d invite(s) nobody answered", expired)
+        except Exception:
+            logging.exception("invite expiry tick failed")
 
 
 @contextlib.asynccontextmanager

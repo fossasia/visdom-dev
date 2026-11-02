@@ -271,7 +271,8 @@ def invite_member(
                 detail="User is already a member of, or already has a pending invite to, this workspace.",
             )
         membership = Membership(
-            user_id=invitee.id, workspace_id=workspace_id, role=invite.role, status="pending_acceptance"
+            user_id=invitee.id, workspace_id=workspace_id, role=invite.role, status="pending_acceptance",
+            invited_at=utcnow()
         )
         db.add(membership)
         commit_or_conflict(
