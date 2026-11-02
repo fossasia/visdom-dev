@@ -36,6 +36,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import bypass
+from app import email as outbound
 from app.admin.activity import RETIRE_PATH, admin_call, instance_addresses
 from app.config import settings
 from app.database import SessionLocal, engine
@@ -206,7 +207,13 @@ def sweep_once() -> dict | None:
             return None
         db = SessionLocal()
         try:
-            return sweep(db)
+            summary = sweep(db)
+            try:
+                warn_owners(db)
+            except Exception:
+                logger.exception("retention: warning owners failed")
+                db.rollback()
+            return summary
         finally:
             db.close()
 
@@ -269,3 +276,41 @@ def notice(db: Session, workspace: Workspace, ask=ask_instance, today: datetime.
     if workspace.is_active:
         result["expiring"] = expiring(workspace, days - ahead, ask=ask)
     return result
+
+
+def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = None) -> int:
+    """Email each owner whose workspace has work about to be removed.
+
+    The console banner only reaches someone who opens the console. One email
+    per warning window is enough: a workspace warned less than
+    ``RETENTION_WARN_DAYS`` ago is skipped, so a daily sweep does not repeat it.
+    Returns how many emails were queued.
+    """
+    now = now or utcnow()
+    gap = datetime.timedelta(days=max(settings.RETENTION_WARN_DAYS, 1))
+    sent = 0
+    for workspace in sweepable(db):
+        warned = workspace.retention_warned_at
+        if warned is not None:
+            if warned.tzinfo is None:
+                warned = warned.replace(tzinfo=datetime.timezone.utc)
+            if now - warned < gap:
+                continue
+        owner = workspace.creator
+        if owner is None or not owner.email:
+            continue
+        info = notice(db, workspace, ask=ask, today=now.date())
+        if info["state"] not in ("scheduled", "active") or not info["expiring"]:
+            continue
+        outbound.send_retention_warning_email(
+            owner.email,
+            workspace.name,
+            info["days"],
+            info["expiring"],
+            info["starts_on"],
+            settings.FRONTEND_URL,
+        )
+        workspace.retention_warned_at = now
+        db.commit()
+        sent += 1
+    return sent
