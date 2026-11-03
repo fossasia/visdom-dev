@@ -17,6 +17,7 @@ from app.database import SessionLocal
 from app.routers import api_keys, auth, billing, health, usage, visdom, workspaces
 
 FIRST_TICK_SECONDS = 300
+INVITE_SWEEP_HOURS = 6
 
 
 async def _sample_usage_forever(seconds: int) -> None:
@@ -83,6 +84,15 @@ async def _delete_accounts_forever(hours: int) -> None:
                 logging.info("deleted %d account(s) at the end of their waiting period", erased)
         except Exception:
             logging.exception("account deletion tick failed")
+
+
+async def _expire_invites_forever(hours: int) -> None:
+    """Remove invites nobody answered, on its own tick so it runs even with
+    account deletion turned off."""
+    delay = FIRST_TICK_SECONDS
+    while True:
+        await asyncio.sleep(delay)
+        delay = hours * 3600
         try:
             expired = await asyncio.to_thread(invites.expire_once)
             if expired:
@@ -105,6 +115,8 @@ async def lifespan(_app: FastAPI):
         tasks.append(asyncio.create_task(_sweep_retention_forever(hours)))
     if settings.ACCOUNT_DELETION_HOURS > 0:
         tasks.append(asyncio.create_task(_delete_accounts_forever(settings.ACCOUNT_DELETION_HOURS)))
+    if settings.INVITE_EXPIRY_DAYS > 0:
+        tasks.append(asyncio.create_task(_expire_invites_forever(INVITE_SWEEP_HOURS)))
     try:
         yield
     finally:

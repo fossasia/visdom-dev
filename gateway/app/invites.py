@@ -28,6 +28,16 @@ def cutoff(now: datetime.datetime | None = None) -> datetime.datetime | None:
     return (now or utcnow()) - datetime.timedelta(days=settings.INVITE_EXPIRY_DAYS)
 
 
+def is_expired(sent_at: datetime.datetime | None, now: datetime.datetime | None = None) -> bool:
+    """Whether an invite sent at ``sent_at`` is past the cutoff, swept or not."""
+    before = cutoff(now)
+    if before is None or sent_at is None:
+        return False
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=datetime.timezone.utc)
+    return sent_at < before
+
+
 def expire(db: Session, now: datetime.datetime | None = None) -> int:
     """Delete every invite older than the cutoff. Returns how many went."""
     before = cutoff(now)

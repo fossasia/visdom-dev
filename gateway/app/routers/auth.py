@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app import account_deletion, password_reset, payments
+from app import account_deletion, invites, password_reset, payments
 from app import email as outbound
 from app.admin.activity import evict_workspace
 from app.config import settings
@@ -91,6 +91,9 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
     pending_invites = db.query(WorkspaceInvite).filter(WorkspaceInvite.email == new_user.email).all()
     for invite in pending_invites:
+        if invites.is_expired(invite.created_at):
+            db.delete(invite)
+            continue
         db.add(
             Membership(
                 user_id=new_user.id,

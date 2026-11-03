@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import retention
+from app import invites, retention
 from app.admin.activity import FilesKept, drop_workspace
 from app.config import settings
 from app.dependencies import commit_or_conflict, get_current_user, get_db
@@ -570,6 +570,10 @@ def accept_invite(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="There's no pending invite for you to accept in this workspace.",
         )
+    if invites.is_expired(membership.invited_at):
+        db.delete(membership)
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invite has expired.")
 
     owner = _owner_of(db, membership.workspace)
     if owner is not None and owner.id != current_user.id:
