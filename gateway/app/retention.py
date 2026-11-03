@@ -284,8 +284,11 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
     The console banner only reaches someone who opens the console. One email
     per warning window is enough: a workspace warned less than
     ``RETENTION_WARN_DAYS`` ago is skipped, so a daily sweep does not repeat it.
-    Returns how many emails were queued.
+    Only a message the relay took counts as a warning, so with email not set
+    up, or a failed send, the next sweep tries again. Returns how many went out.
     """
+    if not outbound.configured():
+        return 0
     now = now or utcnow()
     gap = datetime.timedelta(days=max(settings.RETENTION_WARN_DAYS, 1))
     sent = 0
@@ -302,7 +305,7 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
         info = notice(db, workspace, ask=ask, today=now.date())
         if info["state"] not in ("scheduled", "active") or not info["expiring"]:
             continue
-        outbound.send_retention_warning_email(
+        delivered = outbound.send_retention_warning_email(
             owner.email,
             workspace.name,
             info["days"],
@@ -310,6 +313,8 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
             info["starts_on"],
             settings.FRONTEND_URL,
         )
+        if not delivered:
+            continue
         workspace.retention_warned_at = now
         db.commit()
         sent += 1

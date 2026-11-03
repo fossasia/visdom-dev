@@ -291,7 +291,13 @@ NOW = datetime.datetime(2026, 10, 1, 9, 0, tzinfo=datetime.timezone.utc)
 @pytest.fixture
 def mailbox(monkeypatch):
     sent = []
-    monkeypatch.setattr(retention.outbound, "send_later", lambda to, subject, body: sent.append((to, body)))
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+
+    def deliver(to, subject, body):
+        sent.append((to, body))
+        return True
+
+    monkeypatch.setattr(retention.outbound, "send", deliver)
     return sent
 
 
@@ -342,3 +348,31 @@ def test_a_scheduled_start_names_the_day(db_session, instances, rules, mailbox):
     _workspace(db_session, _owner(db_session, "free"))
     retention.warn_owners(db_session, ask=Recorder(), now=NOW)
     assert "on 2026-10-06" in mailbox[0][1]
+
+
+def test_no_warning_is_recorded_when_email_is_not_set_up(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    workspace = _workspace(db_session, _owner(db_session, "free"))
+    monkeypatch.setattr(retention.outbound, "configured", lambda: False)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 0
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+
+def test_a_failed_send_is_tried_again_on_the_next_sweep(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    workspace = _workspace(db_session, _owner(db_session, "free"))
+    attempts = []
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", lambda *args: attempts.append(args) and False)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 0
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+    monkeypatch.setattr(retention.outbound, "send", lambda *args: True)
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW + datetime.timedelta(hours=1)) == 1
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is not None
+    assert len(attempts) == 1

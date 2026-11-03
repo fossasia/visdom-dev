@@ -104,10 +104,11 @@ def send_password_reset_email(to_email: str, reset_url: str, minutes: int) -> No
 
 def send_retention_warning_email(
     to_email: str, workspace_name: str, days: int, envs: list, starts_on, url: str
-) -> None:
+) -> bool:
+    """Send now, from the sweep's own thread, so the caller knows it went out."""
     names = "\n".join(f"  - {env}" for env in envs)
     when = f"on {starts_on.isoformat()}" if starts_on else "in the next few days"
-    send_later(
+    return send(
         to_email,
         f"Old environments in {workspace_name} will be removed soon",
         (

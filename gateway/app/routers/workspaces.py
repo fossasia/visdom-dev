@@ -435,6 +435,7 @@ def transfer_ownership(
 
     target.role = "admin"
     workspace.created_by = new_owner.id
+    workspace.retention_warned_at = None
     db.commit()
     db.refresh(workspace)
     db.refresh(membership)
