@@ -245,6 +245,26 @@ def set_workspace_starred(
     return _to_my_workspace_response(workspace, membership)
 
 
+def _drop_expired_invite(
+    db: Session, workspace_id: uuid.UUID, email: str, invitee: User | None
+) -> None:
+    """Clear an expired invite to this email so it can be sent again before the sweep."""
+    if invitee:
+        stale = _get_membership(db, workspace_id, invitee.id)
+        if stale and stale.status == "pending_acceptance" and invites.is_expired(stale.invited_at):
+            db.delete(stale)
+            db.flush()
+        return
+    stale = (
+        db.query(WorkspaceInvite)
+        .filter(WorkspaceInvite.workspace_id == workspace_id, WorkspaceInvite.email == email)
+        .first()
+    )
+    if stale and invites.is_expired(stale.created_at):
+        db.delete(stale)
+        db.flush()
+
+
 # --- MEMBERSHIPS ---
 @router.post("/{workspace_id}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 def invite_member(
@@ -259,10 +279,11 @@ def invite_member(
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
 
-    refuse_if_no_seat(db, _owner_of(db, workspace) or current_user)
-
     email_lower = invite.email.strip().lower()
     invitee = db.query(User).filter(User.email == email_lower).first()
+    _drop_expired_invite(db, workspace_id, email_lower, invitee)
+
+    refuse_if_no_seat(db, _owner_of(db, workspace) or current_user)
 
     if invitee:
         if _get_membership(db, workspace_id, invitee.id):

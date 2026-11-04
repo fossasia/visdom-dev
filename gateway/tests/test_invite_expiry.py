@@ -154,3 +154,59 @@ def test_invite_cleanup_runs_with_account_deletion_off(monkeypatch):
 
     asyncio.run(run())
     assert started == [main.INVITE_SWEEP_HOURS]
+
+
+def test_an_expired_member_invite_can_be_sent_again(client, db_session, make_user, make_workspace, expiry):
+    owner = make_user()
+    invitee = make_user()
+    workspace = make_workspace(owner)
+    _invite(client, owner, workspace, invitee["email"])
+    _age(db_session, 31)
+
+    _invite(client, owner, workspace, invitee["email"])
+    db_session.expire_all()
+    membership = db_session.query(Membership).filter(Membership.user_id == uuid.UUID(invitee["id"])).one()
+    assert membership.status == "pending_acceptance"
+    assert not invites.is_expired(membership.invited_at)
+
+
+def test_an_expired_email_invite_can_be_sent_again(client, db_session, make_user, make_workspace, expiry):
+    owner = make_user()
+    workspace = make_workspace(owner)
+    _invite(client, owner, workspace, "again@example.com")
+    _age(db_session, 31)
+
+    _invite(client, owner, workspace, "again@example.com")
+    db_session.expire_all()
+    invite = db_session.query(WorkspaceInvite).one()
+    assert not invites.is_expired(invite.created_at)
+
+
+def test_a_live_invite_or_member_still_blocks_a_second_invite(
+    client, db_session, make_user, make_workspace, add_member, expiry
+):
+    owner = make_user()
+    invitee = make_user()
+    member = make_user()
+    workspace = make_workspace(owner)
+    add_member(owner, workspace, member)
+    _invite(client, owner, workspace, invitee["email"])
+    _age(db_session, 31)
+    for membership in db_session.query(Membership).filter(Membership.user_id == uuid.UUID(member["id"])):
+        membership.invited_at = utcnow() - datetime.timedelta(days=31)
+    db_session.commit()
+
+    again = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": member["email"], "role": "member"},
+        headers=owner["headers"],
+    )
+    assert again.status_code == 400, again.text
+
+    _invite(client, owner, workspace, invitee["email"])
+    twice = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": invitee["email"], "role": "member"},
+        headers=owner["headers"],
+    )
+    assert twice.status_code == 400, twice.text
