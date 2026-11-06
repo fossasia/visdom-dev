@@ -248,21 +248,28 @@ def set_workspace_starred(
 def _drop_expired_invite(
     db: Session, workspace_id: uuid.UUID, email: str, invitee: User | None
 ) -> None:
-    """Clear an expired invite to this email so it can be sent again before the sweep."""
-    if invitee:
-        stale = _get_membership(db, workspace_id, invitee.id)
-        if stale and stale.status == "pending_acceptance" and invites.is_expired(stale.invited_at):
-            db.delete(stale)
-            db.flush()
+    """Clear an expired invite to this email so it can be sent again before the sweep.
+
+    The delete itself checks the row is still an expired pending invite, so an
+    invite accepted between the lookup and the delete is never removed.
+    """
+    before = invites.cutoff()
+    if before is None:
         return
-    stale = (
-        db.query(WorkspaceInvite)
-        .filter(WorkspaceInvite.workspace_id == workspace_id, WorkspaceInvite.email == email)
-        .first()
-    )
-    if stale and invites.is_expired(stale.created_at):
-        db.delete(stale)
-        db.flush()
+    if invitee:
+        db.query(Membership).filter(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == invitee.id,
+            Membership.status == "pending_acceptance",
+            Membership.invited_at < before,
+        ).delete(synchronize_session="fetch")
+    else:
+        db.query(WorkspaceInvite).filter(
+            WorkspaceInvite.workspace_id == workspace_id,
+            WorkspaceInvite.email == email,
+            WorkspaceInvite.created_at < before,
+        ).delete(synchronize_session="fetch")
+    db.flush()
 
 
 # --- MEMBERSHIPS ---
