@@ -17,6 +17,19 @@ runs this as a report for a while first, and what it says it would remove can be
 read before anything is gone. That matters more here than anywhere else in the
 product, because this is the one job whose whole purpose is destroying work.
 
+When email is configured, an environment already past the window is removed
+only after the owner was warned at least ``RETENTION_WARN_DAYS`` earlier. The
+pass that sends that warning does not delete: the sweep looks at the timestamp
+already stored, and the warning is recorded afterwards. That covers the first
+time enforcement is on, a plan or owner change that cleared the timestamp, and
+a send that failed. A later pass removes what the aged warning covered, then
+warns about the next window. Environments that are only approaching the window
+are named in the email and are not removed. Before ``RETENTION_STARTS``, and
+while a start is still further off than the warning window, nothing is removed
+and the existing warning schedule is unchanged. Email that is not configured
+does not hold removal back, so a deployment without a relay does not keep data
+forever.
+
 The instances behind the proxy share one disk, so the sweep has to reach the
 instance that actually holds a workspace. Each one is asked first, in report
 mode, and the one that says it holds it is the one told to remove. When every
@@ -155,19 +168,35 @@ def sweep(db: Session, enforce: bool | None = None, ask=ask_instance) -> dict:
 
     The database is read first and its transaction ended before any instance
     is asked, so a sweep that waits on slow instances holds nothing open.
+
+    With email configured, a workspace is only enforced once
+    ``removal_allowed`` says its stored warning is old enough. The timestamp is
+    the one loaded here, so a warning sent later in the same pass cannot
+    authorize this removal.
     """
     enforce = enforcing() if enforce is None else enforce
+    now = utcnow()
     due = []
     for workspace in sweepable(db):
         days = window_for(db, workspace)
         if days:
-            due.append((SimpleNamespace(id=workspace.id, slug=workspace.slug), days))
+            due.append(
+                (
+                    SimpleNamespace(
+                        id=workspace.id,
+                        slug=workspace.slug,
+                        retention_warned_at=workspace.retention_warned_at,
+                    ),
+                    days,
+                )
+            )
     db.commit()
 
     summary = {"visited": 0, "with_expired": 0, "removed": 0, "workspaces": []}
     for workspace, days in due:
         summary["visited"] += 1
-        result = sweep_workspace(workspace, days, enforce, ask=ask)
+        this_enforce = enforce and removal_allowed(workspace.retention_warned_at, now)
+        result = sweep_workspace(workspace, days, this_enforce, ask=ask)
         if not result["expired"]:
             continue
         summary["with_expired"] += 1
@@ -201,15 +230,45 @@ def only_sweep(bind=None, key=_SWEEP_LOCK):
                 conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
 
 
-def sweep_once() -> dict | None:
+def removal_allowed(warned_at, now: datetime.datetime | None = None) -> bool:
+    """Whether overdue environments may be removed, given the warning on record.
+
+    With email configured, removal waits until a warning was successfully sent
+    at least ``RETENTION_WARN_DAYS`` earlier. A missing timestamp means nothing
+    qualifying has been sent: the first time enforcement is on, a send that
+    failed, or an owner or plan change that cleared it. A younger warning is
+    still inside that grace. Email that is not configured does not hold
+    removal back, so enforcement keeps working without a relay.
+    """
+    if not outbound.configured():
+        return True
+    if warned_at is None:
+        return False
+    now = now or utcnow()
+    if warned_at.tzinfo is None:
+        warned_at = warned_at.replace(tzinfo=datetime.timezone.utc)
+    grace = datetime.timedelta(days=max(settings.RETENTION_WARN_DAYS, 1))
+    return now - warned_at >= grace
+
+
+def sweep_once(ask=ask_instance) -> dict | None:
+    """Remove what an earlier warning covered, then warn about the next window.
+
+    Removal runs first and reads the warning timestamp already stored, so the
+    message this pass sends cannot authorize deleting in this pass. Overdue
+    environments therefore stay until a warning has had
+    ``RETENTION_WARN_DAYS`` of notice. The warning afterwards is the one the
+    owner reads before a later pass removes that work. With email
+    unconfigured, removal is unchanged and no warning is sent.
+    """
     with only_sweep() as mine:
         if not mine:
             return None
         db = SessionLocal()
         try:
-            summary = sweep(db)
+            summary = sweep(db, ask=ask)
             try:
-                warn_owners(db)
+                warn_owners(db, ask=ask)
             except Exception:
                 logger.exception("retention: warning owners failed")
                 db.rollback()
