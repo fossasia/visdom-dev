@@ -64,6 +64,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    """Create an account and turn its unexpired email invites into pending memberships."""
     email = user_in.email.strip().lower()
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:

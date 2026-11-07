@@ -103,6 +103,7 @@ async def _expire_invites_forever(hours: int) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """Start the background ticks that are switched on, and cancel them on shutdown."""
     seconds = settings.USAGE_SAMPLE_SECONDS
     hours = settings.RETENTION_SWEEP_HOURS
     tasks = []

@@ -58,6 +58,7 @@ def expire(db: Session, now: datetime.datetime | None = None) -> int:
 
 
 def expire_once() -> int:
+    """Run one expiry pass in its own session, for the background tick."""
     db = SessionLocal()
     try:
         return expire(db)

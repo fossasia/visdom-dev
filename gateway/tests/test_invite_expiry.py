@@ -156,6 +156,37 @@ def test_invite_cleanup_runs_with_account_deletion_off(monkeypatch):
     assert started == [main.INVITE_SWEEP_HOURS]
 
 
+def test_the_invite_expiry_loop_runs_expire_once_on_each_tick(monkeypatch):
+    import asyncio
+
+    from app import main
+
+    waits = []
+    runs = []
+
+    async def fake_sleep(seconds):
+        if len(waits) == 3:
+            raise asyncio.CancelledError
+        waits.append(seconds)
+
+    def fake_expire_once():
+        runs.append(len(waits))
+        if len(runs) == 2:
+            raise RuntimeError("database went away")
+        return 1
+
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(main.invites, "expire_once", fake_expire_once)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main._expire_invites_forever(6))
+
+    # First wait is the startup delay, then one wait per tick. A failing tick
+    # is logged and the loop carries on to the next one.
+    assert waits == [main.FIRST_TICK_SECONDS, 6 * 3600, 6 * 3600]
+    assert runs == [1, 2, 3]
+
+
 def test_an_expired_member_invite_can_be_sent_again(client, db_session, make_user, make_workspace, expiry):
     owner = make_user()
     invitee = make_user()
