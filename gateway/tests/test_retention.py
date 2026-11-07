@@ -13,7 +13,7 @@ import uuid
 import pytest
 
 from app import retention
-from app.models import Plan, User, Workspace
+from app.models import Plan, User, Workspace, utcnow
 
 
 @pytest.fixture
@@ -450,3 +450,225 @@ def test_moving_to_another_plan_clears_the_last_warning(client, db_session, make
 
     db_session.refresh(workspace)
     assert workspace.retention_warned_at is None
+
+
+class ByAge:
+    """Instances that answer from the age the caller asked about.
+
+    ``overdue`` is already past the plan window. ``soon`` is inside the warning
+    window and not yet due for removal. ``silent`` is an instance that does
+    not answer, which is not the same as an empty list.
+    """
+
+    def __init__(self, overdue=("overdue-run",), soon=("soon-run",), silent=None, window=7):
+        self.overdue = list(overdue)
+        self.soon = list(soon)
+        self.silent = silent
+        self.window = window
+        self.calls = []
+
+    def __call__(self, address, workspace_id, days, dry_run, timeout):
+        self.calls.append({"address": address, "days": days, "dry_run": dry_run})
+        if address == self.silent:
+            return None
+        envs = list(self.overdue)
+        if days < self.window:
+            envs.extend(self.soon)
+        return {
+            "workspace_id": str(workspace_id),
+            "loaded": address == "visdom-1:8097",
+            "envs": envs,
+            "removed": 0 if dry_run else len(envs),
+        }
+
+
+def _bind_once(monkeypatch, db_session):
+    """Run ``sweep_once`` against this test session instead of a new one."""
+    monkeypatch.setattr(retention, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+
+def _removed(ask):
+    return [call for call in ask.calls if not call["dry_run"]]
+
+
+def test_the_first_enforcing_pass_warns_and_does_not_delete(db_session, instances, rules, mailbox, monkeypatch):
+    """Already-overdue work is named, then kept, until the warning has aged.
+
+    Swapping the calls would still delete in this same pass. The warning has
+    to be on record from earlier.
+    """
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="first-pass")
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert "overdue-run" in mailbox[0][1]
+    assert "soon-run" in mailbox[0][1]
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is not None
+
+
+def test_upcoming_environments_are_warned_and_not_removed(db_session, instances, rules, mailbox, monkeypatch):
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    _workspace(db_session, _owner(db_session, "free"), slug="soon-only")
+    ask = ByAge(overdue=[])
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    body = mailbox[0][1]
+    assert "soon-run" in body
+    assert "overdue-run" not in body
+    assert any(call["days"] < 7 for call in ask.calls)
+
+
+def test_a_recent_warning_holds_overdue_environments(db_session, instances, rules, mailbox, monkeypatch):
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="young-warning")
+    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=1)
+    db_session.commit()
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert mailbox == []
+
+
+def test_overdue_environments_go_once_the_warning_is_a_full_window_old(
+    db_session, instances, rules, mailbox, monkeypatch
+):
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="aged-warning")
+    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=3)
+    db_session.commit()
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 1
+    assert _removed(ask)
+    assert all(call["days"] >= 7 for call in _removed(ask))
+    assert "soon-run" in mailbox[0][1]
+
+
+def test_a_failed_warning_does_not_let_overdue_environments_go(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="failed-send")
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", lambda *args: False)
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+
+def test_clearing_the_warning_holds_the_next_deletion(db_session, instances, rules, mailbox, monkeypatch):
+    """A shorter plan, or a new owner, clears the timestamp and starts grace over."""
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    owner = _owner(db_session, "free")
+    workspace = _workspace(db_session, owner, slug="plan-changed")
+    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=10)
+    db_session.commit()
+    retention.forget_warnings(db_session, owner)
+    db_session.commit()
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert "overdue-run" in mailbox[0][1]
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is not None
+
+
+def test_enforcement_still_deletes_when_email_is_not_configured(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="no-relay")
+    monkeypatch.setattr(retention.outbound, "configured", lambda: False)
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 1
+    assert _removed(ask)
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+
+def test_a_partial_answer_does_not_warn_or_remove(db_session, instances, rules, mailbox, monkeypatch):
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="partial")
+    ask = ByAge(silent="visdom-2:8097")
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert mailbox == []
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+
+def test_a_scheduled_start_warns_ahead_and_does_not_delete_yet(db_session, instances, rules, mailbox, monkeypatch):
+    starts = datetime.date.today() + datetime.timedelta(days=2)
+    rules(enforce=True, starts=starts, warn=3)
+    _bind_once(monkeypatch, db_session)
+    _workspace(db_session, _owner(db_session, "free"), slug="scheduled")
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert f"on {starts.isoformat()}" in mailbox[0][1]
+
+
+def test_the_first_pass_on_the_start_date_warns_instead_of_deleting(
+    db_session, instances, rules, mailbox, monkeypatch
+):
+    rules(enforce=True, starts=datetime.date.today(), warn=3)
+    _bind_once(monkeypatch, db_session)
+    _workspace(db_session, _owner(db_session, "free"), slug="starts-today")
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert mailbox
+
+
+def test_a_warning_aged_before_the_start_allows_deletion_when_it_arrives(
+    db_session, instances, rules, mailbox, monkeypatch
+):
+    rules(enforce=True, starts=datetime.date.today(), warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="start-aged")
+    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=3)
+    db_session.commit()
+    ask = ByAge()
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 1
+    assert _removed(ask)
