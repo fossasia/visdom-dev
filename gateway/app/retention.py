@@ -221,11 +221,14 @@ def sweep_once() -> dict | None:
 _SOONEST = 0.01
 
 
-def expiring(workspace: Workspace, older_than_days: float, ask=ask_instance, timeout=None) -> list | None:
+def expiring(
+    workspace: Workspace, older_than_days: float, ask=ask_instance, timeout=None, complete=False
+) -> list | None:
     """Environments older than the given age, from whichever instances answer.
 
     None when no instance answered, so the console can say it does not know
-    rather than that nothing is going.
+    rather than that nothing is going. With ``complete``, also None when any
+    instance did not answer, for a caller that must not act on a partial list.
     """
     addresses = instance_addresses()
     if not addresses:
@@ -235,7 +238,7 @@ def expiring(workspace: Workspace, older_than_days: float, ask=ask_instance, tim
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
         answers = list(pool.map(lambda a: ask(a, workspace.id, days, True, timeout), addresses))
     answered = [answer for answer in answers if answer is not None]
-    if not answered:
+    if not answered or (complete and len(answered) < len(answers)):
         return None
     return sorted({eid for answer in answered for eid in answer.get("envs", [])})
 
@@ -284,14 +287,32 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
     The console banner only reaches someone who opens the console. One email
     per warning window is enough: a workspace warned less than
     ``RETENTION_WARN_DAYS`` ago is skipped, so a daily sweep does not repeat it.
+    While deleting is still scheduled, nobody is emailed until the start day is
+    within ``RETENTION_WARN_DAYS``, so a far-off start does not mean an email
+    every few days until then.
+
     Only a message the relay took counts as a warning, so with email not set
-    up, or a failed send, the next sweep tries again. Returns how many went out.
+    up, or a failed send, the next sweep tries again. A workspace is skipped
+    when any instance did not answer, since the list of what goes would be
+    incomplete. As in ``sweep``, the database is read first and the
+    transaction ended before any instance is asked. Returns how many went out.
     """
-    if not outbound.configured():
+    if not outbound.configured() or not settings.RETENTION_ENFORCE:
         return 0
     now = now or utcnow()
+    today = now.date()
+    starts = settings.RETENTION_STARTS
+    if starts is not None and today < starts:
+        ahead = (starts - today).days
+        if ahead > settings.RETENTION_WARN_DAYS:
+            return 0
+        starts_on = starts
+    else:
+        ahead = settings.RETENTION_WARN_DAYS
+        starts_on = None
     gap = datetime.timedelta(days=max(settings.RETENTION_WARN_DAYS, 1))
-    sent = 0
+
+    due = []
     for workspace in sweepable(db):
         warned = workspace.retention_warned_at
         if warned is not None:
@@ -302,20 +323,36 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
         owner = workspace.creator
         if owner is None or not owner.email:
             continue
-        info = notice(db, workspace, ask=ask, today=now.date())
-        if info["state"] not in ("scheduled", "active") or not info["expiring"]:
+        days = window_for(db, workspace)
+        if not days:
+            continue
+        due.append((SimpleNamespace(id=workspace.id, name=workspace.name), owner.email, days))
+    db.commit()
+
+    sent = 0
+    for workspace, email, days in due:
+        envs = expiring(workspace, days - ahead, ask=ask, complete=True)
+        if not envs:
             continue
         delivered = outbound.send_retention_warning_email(
-            owner.email,
-            workspace.name,
-            info["days"],
-            info["expiring"],
-            info["starts_on"],
-            settings.FRONTEND_URL,
+            email, workspace.name, days, envs, starts_on, settings.FRONTEND_URL
         )
         if not delivered:
             continue
-        workspace.retention_warned_at = now
+        db.query(Workspace).filter(Workspace.id == workspace.id).update(
+            {Workspace.retention_warned_at: now}, synchronize_session=False
+        )
         db.commit()
         sent += 1
     return sent
+
+
+def forget_warnings(db: Session, user) -> None:
+    """Let the workspaces this user owns be warned again, after their plan changed.
+
+    A new plan can keep fewer days, so more work goes sooner than the last
+    warning said. The caller commits.
+    """
+    db.query(Workspace).filter(Workspace.created_by == user.id).update(
+        {Workspace.retention_warned_at: None}, synchronize_session=False
+    )

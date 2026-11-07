@@ -344,10 +344,70 @@ def test_nobody_is_emailed_before_deleting_is_switched_on(db_session, instances,
 
 
 def test_a_scheduled_start_names_the_day(db_session, instances, rules, mailbox):
-    rules(enforce=True, starts=NOW.date() + datetime.timedelta(days=5))
+    rules(enforce=True, starts=NOW.date() + datetime.timedelta(days=2), warn=3)
     _workspace(db_session, _owner(db_session, "free"))
     retention.warn_owners(db_session, ask=Recorder(), now=NOW)
-    assert "on 2026-10-06" in mailbox[0][1]
+    assert "on 2026-10-03" in mailbox[0][1]
+
+
+def test_nobody_is_emailed_while_the_start_is_further_off_than_the_warning(
+    db_session, instances, rules, mailbox
+):
+    rules(enforce=True, starts=NOW.date() + datetime.timedelta(days=30), warn=3)
+    _workspace(db_session, _owner(db_session, "free"))
+    ask = Recorder()
+
+    assert retention.warn_owners(db_session, ask=ask, now=NOW) == 0
+    assert mailbox == []
+    assert ask.calls == []
+
+    soon = NOW + datetime.timedelta(days=27)
+    assert retention.warn_owners(db_session, ask=ask, now=soon) == 1
+    assert "on 2026-10-31" in mailbox[0][1]
+
+
+def test_nobody_is_emailed_when_an_instance_did_not_answer(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    workspace = _workspace(db_session, _owner(db_session, "free"))
+    full = Recorder(envs=["old-run"])
+
+    def one_silent(address, *args):
+        return None if address == "visdom-2:8097" else full(address, *args)
+
+    assert retention.warn_owners(db_session, ask=one_silent, now=NOW) == 0
+    assert mailbox == []
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+
+def test_no_transaction_is_open_while_warning_asks_an_instance(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    _workspace(db_session, _owner(db_session, "free"))
+    open_while_asked = []
+
+    def ask(address, workspace_id, days, dry_run, timeout):
+        open_while_asked.append(db_session.in_transaction())
+        return {"workspace_id": str(workspace_id), "loaded": False, "envs": ["old-run"], "removed": 0}
+
+    assert retention.warn_owners(db_session, ask=ask, now=NOW) == 1
+    assert open_while_asked
+    assert not any(open_while_asked)
+
+
+def test_a_plan_change_lets_the_owner_be_warned_again(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    owner = _owner(db_session, "free")
+    workspace = _workspace(db_session, owner)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 1
+    retention.forget_warnings(db_session, owner)
+    db_session.commit()
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
+
+    later = NOW + datetime.timedelta(hours=1)
+    assert retention.warn_owners(db_session, ask=Recorder(), now=later) == 1
+    assert len(mailbox) == 2
 
 
 def test_no_warning_is_recorded_when_email_is_not_set_up(db_session, instances, rules, monkeypatch):
@@ -376,3 +436,17 @@ def test_a_failed_send_is_tried_again_on_the_next_sweep(db_session, instances, r
     db_session.refresh(workspace)
     assert workspace.retention_warned_at is not None
     assert len(attempts) == 1
+
+
+def test_moving_to_another_plan_clears_the_last_warning(client, db_session, make_user, make_workspace):
+    user = make_user()
+    created = make_workspace(user)
+    workspace = db_session.query(Workspace).filter(Workspace.id == uuid.UUID(created["id"])).first()
+    workspace.retention_warned_at = NOW
+    db_session.commit()
+
+    moved = client.post("/api/v1/billing/subscription", json={"tier": "free"}, headers=user["headers"])
+    assert moved.status_code == 200, moved.text
+
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None
