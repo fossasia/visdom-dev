@@ -157,6 +157,10 @@ class Membership(Base):
     status = Column(String, nullable=False, default="active", server_default="active")
     invited_at = Column(DateTime(timezone=True), nullable=True)
 
+    __table_args__ = (
+        Index("ix_memberships_status_invited_at", "status", "invited_at"),
+    )
+
     user = relationship("User", back_populates="memberships")
     workspace = relationship("Workspace", back_populates="memberships")
 
@@ -169,7 +173,7 @@ class WorkspaceInvite(Base):
     email = Column(String, nullable=False, index=True)
     role = Column(String, default="member")
     invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "email", name="uq_workspace_invites_workspace_email"),
