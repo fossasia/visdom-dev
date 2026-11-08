@@ -312,6 +312,7 @@ def test_the_owner_is_emailed_about_what_goes_next(db_session, instances, rules,
     assert to == owner.email
     assert "old-run" in body
     assert "7 days" in body
+    assert "3 days after this notice" in body
 
 
 def test_an_owner_is_warned_once_per_window(db_session, instances, rules, mailbox):
@@ -347,7 +348,11 @@ def test_a_scheduled_start_names_the_day(db_session, instances, rules, mailbox):
     rules(enforce=True, starts=NOW.date() + datetime.timedelta(days=2), warn=3)
     _workspace(db_session, _owner(db_session, "free"))
     retention.warn_owners(db_session, ask=Recorder(), now=NOW)
-    assert "on 2026-10-03" in mailbox[0][1]
+    body = mailbox[0][1]
+    assert "does not begin before 2026-10-03" in body
+    assert "3 days after this notice" in body
+    assert "removed on 2026-10-03" not in body
+    assert "will be removed on" not in body
 
 
 def test_nobody_is_emailed_while_the_start_is_further_off_than_the_warning(
@@ -363,7 +368,8 @@ def test_nobody_is_emailed_while_the_start_is_further_off_than_the_warning(
 
     soon = NOW + datetime.timedelta(days=27)
     assert retention.warn_owners(db_session, ask=ask, now=soon) == 1
-    assert "on 2026-10-31" in mailbox[0][1]
+    assert "does not begin before 2026-10-31" in mailbox[0][1]
+    assert "will be removed on" not in mailbox[0][1]
 
 
 def test_nobody_is_emailed_when_an_instance_did_not_answer(db_session, instances, rules, mailbox):
@@ -640,7 +646,8 @@ def test_a_scheduled_start_warns_ahead_and_does_not_delete_yet(db_session, insta
 
     assert summary["removed"] == 0
     assert _removed(ask) == []
-    assert f"on {starts.isoformat()}" in mailbox[0][1]
+    assert f"does not begin before {starts.isoformat()}" in mailbox[0][1]
+    assert "will be removed on" not in mailbox[0][1]
 
 
 def test_the_first_pass_on_the_start_date_warns_instead_of_deleting(
@@ -672,3 +679,113 @@ def test_a_warning_aged_before_the_start_allows_deletion_when_it_arrives(
 
     assert summary["removed"] == 1
     assert _removed(ask)
+
+
+def _aware(moment):
+    if moment is not None and moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return moment
+
+
+def test_each_warning_is_dated_when_that_send_was_accepted(db_session, instances, rules, monkeypatch):
+    """A slow batch must not date every workspace from when the pass started."""
+    rules(enforce=True, warn=3)
+    first = _workspace(db_session, _owner(db_session, "free"), slug="handoff-a")
+    second = _workspace(db_session, _owner(db_session, "free"), slug="handoff-b")
+    moments = [NOW, NOW + datetime.timedelta(hours=6), NOW + datetime.timedelta(hours=7)]
+
+    def clock():
+        return moments.pop(0)
+
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", lambda *args: True)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), clock=clock) == 2
+    db_session.refresh(first)
+    db_session.refresh(second)
+    stamped = {_aware(first.retention_warned_at), _aware(second.retention_warned_at)}
+    assert stamped == {NOW + datetime.timedelta(hours=6), NOW + datetime.timedelta(hours=7)}
+    assert moments == []
+
+
+def test_one_workspace_failing_to_send_does_not_skip_the_others(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    broken = _workspace(db_session, _owner(db_session, "free"), slug="breaks")
+    later = _workspace(db_session, _owner(db_session, "free"), slug="follows")
+
+    def deliver(to, subject, body):
+        if "breaks" in subject or "breaks" in body:
+            raise ValueError("header refused")
+        return True
+
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", deliver)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 1
+    db_session.refresh(broken)
+    db_session.refresh(later)
+    assert broken.retention_warned_at is None
+    assert later.retention_warned_at is not None
+
+
+def test_a_newline_in_the_workspace_name_does_not_become_a_header(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    named = _workspace(db_session, _owner(db_session, "free"), slug="split-name")
+    named.name = "North\nLab"
+    db_session.commit()
+    subjects = []
+
+    def deliver(to, subject, body):
+        subjects.append(subject)
+        return True
+
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", deliver)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 1
+    assert subjects
+    assert "\n" not in subjects[0] and "\r" not in subjects[0]
+    assert "North Lab" in subjects[0]
+
+
+def test_a_reset_during_delivery_is_not_replaced_by_the_old_warning(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    owner = _owner(db_session, "free")
+    other = _owner(db_session, "free")
+    workspace = _workspace(db_session, owner, slug="handed-over")
+
+    def deliver(to, subject, body):
+        row = db_session.query(Workspace).filter(Workspace.id == workspace.id).one()
+        row.created_by = other.id
+        row.retention_warned_at = None
+        db_session.commit()
+        return True
+
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", deliver)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 0
+    db_session.refresh(workspace)
+    assert workspace.created_by == other.id
+    assert workspace.retention_warned_at is None
+
+
+def test_a_plan_change_during_delivery_is_not_stamped_as_already_warned(
+    db_session, instances, rules, monkeypatch
+):
+    rules(enforce=True, warn=3)
+    owner = _owner(db_session, "free")
+    workspace = _workspace(db_session, owner, slug="shrunk")
+
+    def deliver(to, subject, body):
+        owner.tier = "enterprise"
+        retention.forget_warnings(db_session, owner)
+        db_session.commit()
+        return True
+
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", deliver)
+
+    assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 0
+    db_session.refresh(workspace)
+    assert workspace.retention_warned_at is None

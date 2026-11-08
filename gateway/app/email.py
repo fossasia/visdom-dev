@@ -102,18 +102,45 @@ def send_password_reset_email(to_email: str, reset_url: str, minutes: int) -> No
     )
 
 
+def _one_line(value: str) -> str:
+    """Header text, with line breaks flattened so a name cannot break the message."""
+    return " ".join(str(value).split())
+
+
 def send_retention_warning_email(
-    to_email: str, workspace_name: str, days: int, envs: list, starts_on, url: str
+    to_email: str,
+    workspace_name: str,
+    days: int,
+    envs: list,
+    starts_on,
+    url: str,
+    warn_days: int,
 ) -> bool:
-    """Send now, from the sweep's own thread, so the caller knows it went out."""
+    """Send now, from the sweep's own thread, so the caller knows it went out.
+
+    ``starts_on`` is the day enforcement may begin, not the day the files are
+    deleted. Removal waits at least ``warn_days`` after this message, and also
+    until ``starts_on`` when that day is still ahead. The subject is one line,
+    because a workspace name with a line break would otherwise be an illegal
+    header and the send would raise.
+    """
     names = "\n".join(f"  - {env}" for env in envs)
-    when = f"on {starts_on.isoformat()}" if starts_on else "in the next few days"
+    unit = "day" if warn_days == 1 else "days"
+    grace = f"These are not removed until at least {warn_days} {unit} after this notice."
+    if starts_on is not None:
+        schedule = (
+            f"Enforcement does not begin before {starts_on.isoformat()}. "
+            f"{grace} The later of those is the earliest they can go."
+        )
+    else:
+        schedule = grace
     return send(
         to_email,
-        f"Old environments in {workspace_name} will be removed soon",
+        f"Old environments in {_one_line(workspace_name)} will be removed after notice",
         (
             f"Your plan keeps {days} days of work. These environments in "
-            f"\"{workspace_name}\" will be removed {when}:\n\n{names}\n\n"
+            f"\"{workspace_name}\" are past that window, or will pass it "
+            f"within this notice:\n\n{names}\n\n{schedule}\n\n"
             f"Open the workspace to save anything you want to keep:\n{url}"
         ),
     )

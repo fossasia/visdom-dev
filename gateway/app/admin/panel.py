@@ -317,6 +317,13 @@ class UserAdmin(ChangeableView, model=User):
                 status_code=400,
                 detail=f"{tier} is archived or does not exist, so no account can be put on it.",
             )
+        # Same session as the tier write, so a rejected save does not clear the
+        # warning and a committed shorter plan cannot keep the old notice.
+        same = object_session(model)
+        if not is_created and same is not None:
+            from app import retention
+
+            retention.forget_warnings(same, model)
 
 
 def _email_of(user):
