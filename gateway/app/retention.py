@@ -20,15 +20,18 @@ product, because this is the one job whose whole purpose is destroying work.
 When email is configured, an environment already past the window is removed
 only after the owner was warned at least ``RETENTION_WARN_DAYS`` earlier. The
 pass that sends that warning does not delete: the sweep looks at the timestamp
-already stored, and the warning is recorded afterwards. That covers the first
-time enforcement is on, a plan or owner change that cleared the timestamp, and
-a send that failed. A later pass removes what the aged warning covered, then
-warns about the next window. Environments that are only approaching the window
-are named in the email and are not removed. Before ``RETENTION_STARTS``, and
-while a start is still further off than the warning window, nothing is removed
-and the existing warning schedule is unchanged. Email that is not configured
-does not hold removal back, so a deployment without a relay does not keep data
-forever.
+already stored, and the warning is recorded afterwards, at the time that
+message was accepted. That covers the first time enforcement is on, a plan or
+owner change that cleared the timestamp, and a send that failed. A later pass
+removes what that workspace-level grace allows, then warns about the next
+window. The message says the wait is that many days after the notice. A
+scheduled start is when enforcement may begin, not the removal date, and the
+earliest removal is the later of the two. Environments that are only
+approaching the window are named in the email and are not removed. Before
+``RETENTION_STARTS``, and while a start is still further off than the warning
+window, nothing is removed and the existing warning schedule is unchanged.
+Email that is not configured does not hold removal back, so a deployment
+without a relay does not keep data forever.
 
 The instances behind the proxy share one disk, so the sweep has to reach the
 instance that actually holds a workspace. Each one is asked first, in report
@@ -340,7 +343,12 @@ def notice(db: Session, workspace: Workspace, ask=ask_instance, today: datetime.
     return result
 
 
-def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = None) -> int:
+def warn_owners(
+    db: Session,
+    ask=ask_instance,
+    now: datetime.datetime | None = None,
+    clock=None,
+) -> int:
     """Email each owner whose workspace has work about to be removed.
 
     The console banner only reaches someone who opens the console. One email
@@ -351,15 +359,21 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
     every few days until then.
 
     Only a message the relay took counts as a warning, so with email not set
-    up, or a failed send, the next sweep tries again. A workspace is skipped
-    when any instance did not answer, since the list of what goes would be
-    incomplete. As in ``sweep``, the database is read first and the
-    transaction ended before any instance is asked. Returns how many went out.
+    up, or a failed send, the next sweep tries again. The stored time is the
+    handoff for that workspace, not the start of the batch. A failure while
+    building or sending one message is logged and the rest of the batch still
+    runs. The timestamp is written only if the owner, the plan window, and the
+    previous warning are still what was read before the send, so a reset during
+    delivery is not overwritten. A workspace is skipped when any instance did
+    not answer, since the list of what goes would be incomplete. As in
+    ``sweep``, the database is read first and the transaction ended before any
+    instance is asked. Returns how many warnings were recorded.
     """
     if not outbound.configured() or not settings.RETENTION_ENFORCE:
         return 0
-    now = now or utcnow()
-    today = now.date()
+    clock = _warning_clock(now, clock)
+    moment = clock()
+    today = moment.date()
     starts = settings.RETENTION_STARTS
     if starts is not None and today < starts:
         ahead = (starts - today).days
@@ -377,7 +391,7 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
         if warned is not None:
             if warned.tzinfo is None:
                 warned = warned.replace(tzinfo=datetime.timezone.utc)
-            if now - warned < gap:
+            if moment - warned < gap:
                 continue
         owner = workspace.creator
         if owner is None or not owner.email:
@@ -385,25 +399,93 @@ def warn_owners(db: Session, ask=ask_instance, now: datetime.datetime | None = N
         days = window_for(db, workspace)
         if not days:
             continue
-        due.append((SimpleNamespace(id=workspace.id, name=workspace.name), owner.email, days))
+        due.append(
+            (
+                SimpleNamespace(
+                    id=workspace.id,
+                    name=workspace.name,
+                    created_by=workspace.created_by,
+                    retention_warned_at=workspace.retention_warned_at,
+                ),
+                owner.email,
+                days,
+            )
+        )
     db.commit()
 
+    grace_days = max(settings.RETENTION_WARN_DAYS, 1)
     sent = 0
     for workspace, email, days in due:
-        envs = expiring(workspace, days - ahead, ask=ask, complete=True)
-        if not envs:
-            continue
-        delivered = outbound.send_retention_warning_email(
-            email, workspace.name, days, envs, starts_on, settings.FRONTEND_URL
-        )
-        if not delivered:
-            continue
-        db.query(Workspace).filter(Workspace.id == workspace.id).update(
-            {Workspace.retention_warned_at: now}, synchronize_session=False
-        )
-        db.commit()
-        sent += 1
+        try:
+            envs = expiring(workspace, days - ahead, ask=ask, complete=True)
+            if not envs:
+                continue
+            delivered = outbound.send_retention_warning_email(
+                email,
+                workspace.name,
+                days,
+                envs,
+                starts_on,
+                settings.FRONTEND_URL,
+                grace_days,
+            )
+            if not delivered:
+                continue
+            if _record_delivered_warning(db, workspace, days, clock()):
+                sent += 1
+        except Exception:
+            logger.exception("retention: warning %s failed", workspace.id)
+            db.rollback()
     return sent
+
+
+def _warning_clock(now, clock):
+    """The clock for one warning pass.
+
+    ``clock`` is read at the start and again after each accepted send, so a
+    slow batch does not date every message from when the pass began. ``now``
+    is a fixed clock for a test that does not need it to move.
+    """
+    if clock is not None:
+        return clock
+    if now is not None:
+        return lambda: now
+    return utcnow
+
+
+def _same_warning(left, right) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if left.tzinfo is None:
+        left = left.replace(tzinfo=datetime.timezone.utc)
+    if right.tzinfo is None:
+        right = right.replace(tzinfo=datetime.timezone.utc)
+    return left == right
+
+
+def _record_delivered_warning(db: Session, workspace, days: int, handed: datetime.datetime) -> bool:
+    """Store ``handed`` unless the row no longer matches the warning that was sent.
+
+    The owner, the plan window, and the previous timestamp are the ones read
+    before the relay was called. A transfer or a plan change commits its own
+    reset while the send is in flight; writing over that reset would treat the
+    old message as notice for the new situation.
+    """
+    row = db.query(Workspace).filter(Workspace.id == workspace.id).with_for_update().one_or_none()
+    if (
+        row is None
+        or row.created_by != workspace.created_by
+        or not _same_warning(row.retention_warned_at, workspace.retention_warned_at)
+        or window_for(db, row) != days
+    ):
+        # End the lock without writing. Rollback would also undo a reset that
+        # was committed on this same session, which is how the tests, and a
+        # request sharing the gateway session, observe it.
+        db.commit()
+        return False
+    row.retention_warned_at = handed
+    db.commit()
+    return True
 
 
 def forget_warnings(db: Session, user) -> None:
