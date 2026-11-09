@@ -21,6 +21,13 @@ from app import bypass
 from app.billing import LIMIT_KEYS, get_plan
 from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, WorkspaceUsageHour, utcnow
 
+# Maximum number of invite emails one workspace may send in a rolling 24-hour
+# window, regardless of plan tier.  This is an anti-spam / abuse guard rather
+# than a plan feature, so it lives here as a constant instead of in the Plan
+# model.  Accounts whose limits are bypassed (staff promotions, pilots) are
+# exempt — consistent with every other limit in the codebase.
+DAILY_INVITE_LIMIT = 50
+
 
 def owned_workspace_ids(db: Session, user: User, include_trashed: bool = False) -> list:
     query = db.query(Workspace.id).filter(Workspace.created_by == user.id)
@@ -82,6 +89,59 @@ def invites_waiting_in(db: Session, workspace_id) -> int:
     )
     unregistered = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id == workspace_id).count()
     return unanswered + unregistered
+
+
+def invites_sent_last_24h(db: Session, workspace_id) -> int:
+    """Count invite emails dispatched by one workspace in the last 24 hours.
+
+    Both invite paths are counted:
+
+    * ``WorkspaceInvite`` rows — for addresses with no existing account.
+    * ``Membership`` rows with ``status = "pending_acceptance"`` — for
+      addresses that already have an account.
+
+    Both rows are created immediately before the email is sent, so their
+    ``created_at`` timestamp is the moment the email was dispatched.
+    """
+    since = utcnow() - datetime.timedelta(hours=24)
+    unregistered = (
+        db.query(WorkspaceInvite)
+        .filter(
+            WorkspaceInvite.workspace_id == workspace_id,
+            WorkspaceInvite.created_at >= since,
+        )
+        .count()
+    )
+    registered = (
+        db.query(Membership)
+        .filter(
+            Membership.workspace_id == workspace_id,
+            Membership.status == "pending_acceptance",
+            Membership.created_at >= since,
+        )
+        .count()
+    )
+    return unregistered + registered
+
+
+def refuse_if_daily_invite_limit_reached(db: Session, owner: User, workspace_id) -> None:
+    """Raise 429 when a workspace has hit the daily invite cap.
+
+    The cap (``DAILY_INVITE_LIMIT``) applies per workspace per rolling
+    24-hour window.  Accounts whose limits are bypassed are exempt so that
+    staff promotions and pilot accounts are never throttled.
+    """
+    if bypass.applies_to(db, owner):
+        return
+    sent = invites_sent_last_24h(db, workspace_id)
+    if sent >= DAILY_INVITE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"This workspace has sent {DAILY_INVITE_LIMIT} invite emails in the last "
+                "24 hours. Please try again tomorrow."
+            ),
+        )
 
 
 def seats_held(db: Session, user: User) -> int:
