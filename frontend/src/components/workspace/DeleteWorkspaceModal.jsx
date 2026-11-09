@@ -37,7 +37,7 @@ const DeleteWorkspaceModal = ({ workspace, onClose, onDeleted }) => {
         <span className="gc-modal-title gc-text-danger">
           Delete Workspace
         </span>
-        <button className="gc-modal-close" onClick={onClose} type="button">
+        <button className="gc-modal-close" onClick={onClose} type="button" aria-label="Close">
           <X size={16} />
         </button>
       </div>
