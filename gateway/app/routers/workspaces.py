@@ -46,6 +46,7 @@ from app.usage import (
     invites_waiting_in,
     members_used,
     refuse_if_at_limit,
+    refuse_if_daily_invite_limit_reached,
     refuse_if_full,
     refuse_if_no_seat,
     workspaces_used,
@@ -260,6 +261,7 @@ def invite_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
 
     refuse_if_no_seat(db, _owner_of(db, workspace) or current_user)
+    refuse_if_daily_invite_limit_reached(db, _owner_of(db, workspace) or current_user, workspace_id)
 
     email_lower = invite.email.strip().lower()
     invitee = db.query(User).filter(User.email == email_lower).first()

@@ -155,6 +155,7 @@ class Membership(Base):
     role = Column(String, default="member")
     starred = Column(Boolean, default=False)
     status = Column(String, nullable=False, default="active", server_default="active")
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=True)
 
     user = relationship("User", back_populates="memberships")
     workspace = relationship("Workspace", back_populates="memberships")

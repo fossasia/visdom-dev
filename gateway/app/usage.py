@@ -21,6 +21,9 @@ from app import bypass
 from app.billing import LIMIT_KEYS, get_plan
 from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, WorkspaceUsageHour, utcnow
 
+# Maximum invite emails one workspace may send in a rolling 24-hour window.
+DAILY_INVITE_LIMIT = 50
+
 
 def owned_workspace_ids(db: Session, user: User, include_trashed: bool = False) -> list:
     query = db.query(Workspace.id).filter(Workspace.created_by == user.id)
@@ -82,6 +85,44 @@ def invites_waiting_in(db: Session, workspace_id) -> int:
     )
     unregistered = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id == workspace_id).count()
     return unanswered + unregistered
+
+
+def invites_sent_last_24h(db: Session, workspace_id) -> int:
+    """Count invites sent by one workspace in the last 24 hours (both registered and unregistered)."""
+    since = utcnow() - datetime.timedelta(hours=24)
+    unregistered = (
+        db.query(WorkspaceInvite)
+        .filter(
+            WorkspaceInvite.workspace_id == workspace_id,
+            WorkspaceInvite.created_at >= since,
+        )
+        .count()
+    )
+    registered = (
+        db.query(Membership)
+        .filter(
+            Membership.workspace_id == workspace_id,
+            Membership.status == "pending_acceptance",
+            Membership.created_at >= since,
+        )
+        .count()
+    )
+    return unregistered + registered
+
+
+def refuse_if_daily_invite_limit_reached(db: Session, owner: User, workspace_id) -> None:
+    """Raise a 429 if the workspace has hit the daily invite cap (bypasses exempt)."""
+    if bypass.applies_to(db, owner):
+        return
+    sent = invites_sent_last_24h(db, workspace_id)
+    if sent >= DAILY_INVITE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"This workspace has sent {DAILY_INVITE_LIMIT} invite emails in the last "
+                "24 hours. Please try again tomorrow."
+            ),
+        )
 
 
 def seats_held(db: Session, user: User) -> int:
