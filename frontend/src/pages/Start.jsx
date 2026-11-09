@@ -89,7 +89,7 @@ const Pane = ({ title, tone, height, children }) => (
 const Samples = ({ ids }) => (
   <div className="st-imgs">
     {ids.map((id, i) => (
-      <img key={`${id}-${i}`} src={`/start/samples/${id}.jpg`} alt="Sample image from a training batch" width="400" height="400" />
+      <img key={`${id}-${i}`} src={`/start/samples/${id}.jpg`} alt="Sample from a training batch" width="400" height="400" />
     ))}
   </div>
 );
@@ -396,7 +396,7 @@ const Start = () => {
           <figure className="st-open-pic st-rise">
             <img
               src="/start/fossasia-summit-2019.jpg"
-              alt="Group photo of the FOSSASIA Summit 2019 at the Lifelong Learning Institute, Singapore"
+              alt="FOSSASIA Summit 2019 at the Lifelong Learning Institute, Singapore"
               width="1600"
               height="737"
               loading="lazy"

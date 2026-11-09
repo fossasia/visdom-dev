@@ -109,10 +109,11 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="login-email" style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Email Address
             </label>
             <input
+              id="login-email"
               type="email"
               required
               className="visdom-input"
@@ -124,7 +125,7 @@ const Login = () => {
 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+              <label htmlFor="login-password" style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
                 Password
               </label>
               <Link to="/forgot-password" state={{ email }} style={{ fontSize: '12px', color: '#3b5998', textDecoration: 'none' }}>
@@ -132,6 +133,7 @@ const Login = () => {
               </Link>
             </div>
             <PasswordInput
+              id="login-password"
               required
               autoComplete="current-password"
               placeholder="••••••••"
