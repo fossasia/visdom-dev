@@ -8,8 +8,10 @@ import { useToast } from '../components/toast/useToast';
 import { parseApiError, resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
 import { formatMoment } from '../utils/billing';
 import { invalidate } from '../utils/requestCache';
+import usePageTitle from '../hooks/usePageTitle';
 
 const Login = () => {
+  usePageTitle('Sign in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

@@ -4,8 +4,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useToast } from '../components/toast/useToast';
+import usePageTitle from '../hooks/usePageTitle';
 
 const JoinWorkspace = () => {
+  usePageTitle('Join workspace');
   const { linkId } = useParams();
   const navigate = useNavigate();
   const confirm = useConfirm();
