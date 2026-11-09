@@ -304,6 +304,10 @@ class UserAdmin(ChangeableView, model=User):
         if chosen:
             data["password_hash"] = get_password_hash(chosen)
             model.token_version = (model.token_version or 0) + 1
+        if not is_created and model.bypass_limits and "bypass_limits" in data and not data["bypass_limits"]:
+            same = object_session(model)
+            if same is not None:
+                bypass.forget_warnings(same, model)
         tier = data.get("tier")
         if tier is None or tier == model.tier:
             return

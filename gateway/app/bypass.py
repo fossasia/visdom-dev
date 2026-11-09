@@ -24,7 +24,7 @@ days, with someone watching, and not left on.
 
 from sqlalchemy.orm import Session
 
-from app.models import PlatformSwitch, User, utcnow
+from app.models import PlatformSwitch, User, Workspace, utcnow
 
 EVERYONE = "bypass_limits"
 
@@ -64,6 +64,10 @@ def set_for_everyone(db: Session, on: bool, by: str | None = None) -> bool:
     switch.is_on = bool(on)
     switch.changed_at = utcnow()
     switch.changed_by = by
+    if not on:
+        # A warning sent before the bypass may be long past its grace by now.
+        # Clear it so nothing made during the bypass goes before a fresh notice.
+        db.query(Workspace).update({Workspace.retention_warned_at: None}, synchronize_session=False)
     db.commit()
     return True
 
@@ -73,8 +77,20 @@ def set_for_account(db: Session, user: User, on: bool) -> bool:
     if bool(user.bypass_limits) == bool(on):
         return False
     user.bypass_limits = bool(on)
+    if not on:
+        forget_warnings(db, user)
     db.commit()
     return True
+
+
+def forget_warnings(db: Session, user: User) -> None:
+    """Make this user's workspaces wait for a fresh retention warning.
+
+    Called when a bypass ends. The caller commits.
+    """
+    from app import retention
+
+    retention.forget_warnings(db, user)
 
 
 def accounts(db: Session) -> list[User]:

@@ -925,3 +925,31 @@ def test_staff_shortening_a_plan_clears_the_retention_warning(admin_client):
     db.expire_all()
     assert db.get(User, user.id).tier == "free"
     assert db.get(Workspace, workspace.id).retention_warned_at is None
+
+
+def test_staff_ending_a_bypass_in_the_user_form_clears_the_retention_warning(admin_client):
+    """Same as the limit bypass page: nothing made during the bypass goes on an old notice."""
+    from app.models import User, Workspace, utcnow
+
+    db = admin_client.staff_db
+    user = _account(db, email="unbypass@example.com")
+    user.bypass_limits = True
+    workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Kept",
+        slug="kept-unbypass",
+        created_by=user.id,
+        retention_warned_at=utcnow(),
+    )
+    db.add(workspace)
+    db.commit()
+
+    saved = admin_client.post(
+        f"/admin/user/edit/{user.id}",
+        data=_user_form(user),
+        follow_redirects=False,
+    )
+    assert saved.status_code in (302, 303), saved.text
+    db.expire_all()
+    assert db.get(User, user.id).bypass_limits is False
+    assert db.get(Workspace, workspace.id).retention_warned_at is None
