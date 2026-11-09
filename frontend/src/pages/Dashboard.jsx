@@ -16,6 +16,7 @@ import ProfileModal from '../components/ProfileModal';
 import { readScoped, writeScoped } from '../utils/storage';
 import { cachedGet, invalidate } from '../utils/requestCache';
 import { pickActiveWorkspace, requestedWorkspaceSlug } from '../utils/activeWorkspace';
+import usePageTitle from '../hooks/usePageTitle';
 
 const TABS = [
   { id: 'workspaces', label: 'Workspaces', icon: Building2 },
@@ -52,6 +53,8 @@ const Dashboard = () => {
     const rest = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
   }, []);
+
+  usePageTitle(activeWorkspace?.name || 'Dashboard');
 
   const isAdmin = activeWorkspace?.role === 'admin';
   const activeWorkspaceId = activeWorkspace?.id;

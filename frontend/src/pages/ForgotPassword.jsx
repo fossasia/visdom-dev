@@ -6,10 +6,12 @@ import AuthShell, { AuthLink, AuthLabel, AuthNote, AuthSubmit, AuthTextButton } 
 import { useToast } from '../components/toast/useToast';
 import { apiErrorText } from '../utils/authLinks';
 import { supportHref } from '../utils/supportContact';
+import usePageTitle from '../hooks/usePageTitle';
 
 const MESSAGE = { fontSize: '13px', lineHeight: 1.5, color: 'var(--text-secondary)', margin: 0 };
 
 const ForgotPassword = () => {
+  usePageTitle('Forgot password');
   const location = useLocation();
   const toast = useToast();
   const [email, setEmail] = useState(location.state?.email || '');

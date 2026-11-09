@@ -6,10 +6,12 @@ import AuthShell, { AuthLink, AuthLabel, AuthNote, AuthSubmit } from '../compone
 import PasswordInput from '../components/PasswordInput';
 import { useToast } from '../components/toast/useToast';
 import { apiErrorText, tokenFromHash } from '../utils/authLinks';
+import usePageTitle from '../hooks/usePageTitle';
 
 const MIN_LENGTH = 6;
 
 const ResetPassword = () => {
+  usePageTitle('Reset password');
   const location = useLocation();
   const navigate = useNavigate();
   const toast = useToast();

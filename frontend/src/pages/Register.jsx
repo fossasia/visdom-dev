@@ -5,10 +5,12 @@ import { Check, RefreshCw, X } from 'lucide-react';
 import { useAuth, api } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
 import { resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
+import usePageTitle from '../hooks/usePageTitle';
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
 
 const Register = () => {
+  usePageTitle('Create account');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
