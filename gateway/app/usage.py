@@ -21,11 +21,7 @@ from app import bypass
 from app.billing import LIMIT_KEYS, get_plan
 from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, WorkspaceUsageHour, utcnow
 
-# Maximum number of invite emails one workspace may send in a rolling 24-hour
-# window, regardless of plan tier.  This is an anti-spam / abuse guard rather
-# than a plan feature, so it lives here as a constant instead of in the Plan
-# model.  Accounts whose limits are bypassed (staff promotions, pilots) are
-# exempt — consistent with every other limit in the codebase.
+# Maximum invite emails one workspace may send in a rolling 24-hour window.
 DAILY_INVITE_LIMIT = 50
 
 
@@ -92,17 +88,7 @@ def invites_waiting_in(db: Session, workspace_id) -> int:
 
 
 def invites_sent_last_24h(db: Session, workspace_id) -> int:
-    """Count invite emails dispatched by one workspace in the last 24 hours.
-
-    Both invite paths are counted:
-
-    * ``WorkspaceInvite`` rows — for addresses with no existing account.
-    * ``Membership`` rows with ``status = "pending_acceptance"`` — for
-      addresses that already have an account.
-
-    Both rows are created immediately before the email is sent, so their
-    ``created_at`` timestamp is the moment the email was dispatched.
-    """
+    """Count invites sent by one workspace in the last 24 hours (both registered and unregistered)."""
     since = utcnow() - datetime.timedelta(hours=24)
     unregistered = (
         db.query(WorkspaceInvite)
@@ -125,12 +111,7 @@ def invites_sent_last_24h(db: Session, workspace_id) -> int:
 
 
 def refuse_if_daily_invite_limit_reached(db: Session, owner: User, workspace_id) -> None:
-    """Raise 429 when a workspace has hit the daily invite cap.
-
-    The cap (``DAILY_INVITE_LIMIT``) applies per workspace per rolling
-    24-hour window.  Accounts whose limits are bypassed are exempt so that
-    staff promotions and pilot accounts are never throttled.
-    """
+    """Raise a 429 if the workspace has hit the daily invite cap (bypasses exempt)."""
     if bypass.applies_to(db, owner):
         return
     sent = invites_sent_last_24h(db, workspace_id)
