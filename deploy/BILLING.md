@@ -40,13 +40,9 @@ and webhooks.
 1. **A price for each paid plan.** In Stripe, go to Product catalog and add a
    product, for example "Visdom Pro", with a recurring monthly price matching
    the plan. Copy the price id, which starts with `price_`.
-2. **Link the plan to the price.** Store the id on the plan. A plan without
-   one cannot be bought.
-   ```
-   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
-   UPDATE plans SET stripe_price_id = 'price_...' WHERE id = 'pro';
-   SQL
-   ```
+2. **Link the plan to the price.** In the admin console, open Billing, then
+   Plans, edit the plan, and paste the id into Stripe price. A plan without one
+   cannot be bought.
 3. **Keys.** In Developers, then API keys, copy the publishable key (`pk_test_`)
    and the secret key (`sk_test_`) into `.env`:
    ```

@@ -1,0 +1,70 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="ap-crumb"><a href="?">Cleanup</a> / {{ leftover.title }}</div>
+<h1 class="ap-page-title">{{ leftover.title }}</h1>
+<div class="ap-page-subtitle">{{ leftover.subtitle }}</div>
+{% endblock %}
+
+{% block content %}
+{% include 'sqladmin/cleanup_styles.html' %}
+
+<div class="col-12">
+  <p class="ap-explain">{{ leftover.explain }}</p>
+
+  {% if not may_delete %}
+  <div class="ap-warn">Your role can look at these {{ leftover.plural }} but not delete them.</div>
+  {% endif %}
+
+  {% if rows %}
+  <form method="post" class="card">
+    <div class="ap-bulk">
+      <span class="ap-bulk-label">Selected</span>
+      <button type="submit" class="ap-act is-danger" name="intent" value="delete"
+        {% if not may_delete %}disabled{% endif %}
+        data-danger data-confirm-title="Delete the selected {{ leftover.plural }}?" data-confirm-label="Delete"
+        data-confirm="{{ leftover.consequence }}">Delete</button>
+      <span class="ap-bulk-label">All</span>
+      <button type="submit" class="ap-act is-danger" name="intent" value="delete_all"
+        {% if not may_delete %}disabled{% endif %}
+        data-danger data-confirm-title="Delete all {{ leftover.count(rows | length) }}?" data-confirm-label="Delete all"
+        data-confirm="{{ leftover.consequence }}">Delete all {{ rows | length }}</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter text-nowrap">
+        <thead>
+          <tr>
+            <th class="w-1"><input class="form-check-input m-0" type="checkbox" aria-label="Select all"
+              data-select-all="row_ids"></th>
+            {% for column in leftover.columns %}
+            <th>{{ column }}</th>
+            {% endfor %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><input class="form-check-input m-0" type="checkbox" name="row_ids" value="{{ row.id }}" aria-label="Select {{ row.label }}"></td>
+            {% for cell in row.cells %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+            <td>
+              <div class="ap-row-actions">
+                <button type="submit" class="ap-act is-danger" name="delete_one" value="{{ row.id }}"
+                  {% if not may_delete %}disabled{% endif %}
+                  data-danger data-confirm-title="Delete {{ row.label }}?" data-confirm-label="Delete"
+                  data-confirm="{{ leftover.consequence }}">Delete</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% else %}
+  <div class="card"><div class="card-body">No {{ leftover.plural }} to clean up.</div></div>
+  {% endif %}
+</div>
+{% endblock %}

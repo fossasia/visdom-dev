@@ -1,0 +1,166 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Usage</h1>
+<div class="ap-page-subtitle">What every workspace used since {{ report.since.strftime("%-d %B") }}, and how busy the machine is right now.</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .ap-usage-heading {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ap-ink-soft);
+    margin: 0 0 12px;
+  }
+
+  .ap-usage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .ap-usage-tile {
+    background: var(--ap-surface);
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius);
+    box-shadow: var(--ap-shadow);
+    padding: 20px 22px;
+  }
+
+  .ap-usage-value {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ap-usage-label {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+  }
+
+  .ap-usage-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--ap-hairline);
+    margin-top: 12px;
+    overflow: hidden;
+  }
+
+  .ap-usage-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--ap-blue);
+  }
+
+  .ap-usage-tile.is-high .ap-usage-bar > span {
+    background: #d64545;
+  }
+
+  .ap-usage-tile.is-high .ap-usage-value {
+    color: #b42318;
+  }
+
+  .ap-usage-table td.num,
+  .ap-usage-table th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<div class="col-12">
+  <h2 class="ap-usage-heading">Server</h2>
+  <div class="ap-usage-grid">
+    {% set tiles = [
+      ("CPU", server.load_share, "%s%%" % server.load_share if server.load_share is not none else "n/a",
+       "load %s across %s cores" % (server.load, server.cpus) if server.load is not none else "%s cores" % server.cpus),
+      ("Memory", server.memory.share if server.memory else none,
+       "%s%%" % server.memory.share if server.memory else "n/a",
+       "%s of %s" % (server.memory.used, server.memory.total) if server.memory else "not reported here"),
+      ("Disk", server.disk.share if server.disk else none,
+       "%s%%" % server.disk.share if server.disk else "n/a",
+       "%s free of %s" % (server.disk.free, server.disk.total) if server.disk else "not reported here"),
+    ] %}
+    {% for name, share, value, detail in tiles %}
+    <div class="ap-usage-tile {% if share is not none and share >= 80 %}is-high{% endif %}">
+      <div class="ap-usage-value">{{ value }}</div>
+      <div class="ap-usage-label">{{ name }} &middot; {{ detail }}</div>
+      {% if share is not none %}
+      <div class="ap-usage-bar"><span style="width: {{ [share, 100] | min }}%"></span></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ server.database or "n/a" }}</div>
+      <div class="ap-usage-label">Database size</div>
+    </div>
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ server.uptime or "n/a" }}</div>
+      <div class="ap-usage-label">Up since last restart</div>
+    </div>
+  </div>
+
+  <h2 class="ap-usage-heading">This month, all workspaces</h2>
+  <div class="ap-usage-grid">
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ format_minutes(report.totals.active_minutes) }}</div>
+      <div class="ap-usage-label">Active time</div>
+    </div>
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ report.totals.active_workspaces }} / {{ report.workspaces | length }}</div>
+      <div class="ap-usage-label">Workspaces with any work</div>
+    </div>
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ "{:,}".format(report.totals.writes) }}</div>
+      <div class="ap-usage-label">Writes</div>
+    </div>
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ format_bytes(report.totals.sent_bytes) }}</div>
+      <div class="ap-usage-label">Sent to viewers</div>
+    </div>
+    <div class="ap-usage-tile">
+      <div class="ap-usage-value">{{ format_bytes(report.totals.storage_bytes) }}</div>
+      <div class="ap-usage-label">Stored now</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">By workspace</h3></div>
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter text-nowrap ap-usage-table">
+        <thead>
+          <tr>
+            <th>Workspace</th>
+            <th>Owner</th>
+            <th>Plan</th>
+            <th class="num">Active time</th>
+            <th class="num">Writes</th>
+            <th class="num">Sent</th>
+            <th class="num">Stored</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in report.workspaces %}
+          <tr>
+            <td>{{ row.slug }}{% if row.suspended %} <span class="badge">suspended</span>{% endif %}</td>
+            <td>{{ row.owner }}</td>
+            <td>{{ row.plan }}</td>
+            <td class="num">{{ format_minutes(row.active_minutes) }}</td>
+            <td class="num">{{ "{:,}".format(row.writes) }}</td>
+            <td class="num">{{ format_bytes(row.sent_bytes) }}</td>
+            <td class="num">{{ format_bytes(row.storage_bytes) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">No workspaces yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

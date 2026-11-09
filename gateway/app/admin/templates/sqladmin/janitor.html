@@ -89,13 +89,28 @@
     color: var(--ap-ink-soft);
   }
 
+  .ap-manage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--ap-hairline);
+    background: rgba(0, 0, 0, .015);
+  }
 
+  .ap-manage-link {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ap-blue);
+    text-decoration: none;
+  }
 
-
-
+  .ap-manage-link:hover {
+    text-decoration: underline;
+  }
 </style>
 
-<div class="col-12">
+<div class="col-12 d-block">
   <div class="ap-sections">
     {% for section in janitor_findings() %}
     <div class="ap-section">
@@ -114,6 +129,11 @@
       </ul>
       {% else %}
       <div class="ap-empty">Nothing to clean up here.</div>
+      {% endif %}
+      {% if section.manage %}
+      <div class="ap-manage">
+        <a class="ap-manage-link" href="?section={{ section.manage.section }}">{{ section.manage.label }} &rarr;</a>
+      </div>
       {% endif %}
     </div>
     {% endfor %}

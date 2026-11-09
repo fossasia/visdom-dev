@@ -18,7 +18,9 @@ import datetime
 
 from sqlalchemy.orm import joinedload
 
+from app import account_deletion
 from app.models import (
+    AdminAction,
     APIKey,
     Membership,
     SharedLink,
@@ -29,6 +31,8 @@ from app.models import (
 )
 
 STALE_KEY_DAYS = 90
+
+NOTICE_DAYS = 30
 
 
 def _aware(moment):
@@ -84,6 +88,139 @@ def unused_keys(db):
     return stale
 
 
+def revoke_unused_keys(db, key_ids=None):
+    """Switch off keys the cleanup page lists as unused, all of them or some.
+
+    Checked against the list again here rather than trusted from the page,
+    since the route is reachable without it: a key used since the page loaded
+    is no longer unused and is left alone. Revoking only clears the active
+    flag, so a key switched off by mistake can be switched back on.
+    """
+    wanted = None if key_ids is None else {str(key_id) for key_id in key_ids}
+    revoked = []
+    for key, _why in unused_keys(db):
+        if wanted is not None and str(key.id) not in wanted:
+            continue
+        key.is_active = False
+        revoked.append((str(key.id), key.name))
+    if revoked:
+        db.commit()
+    return revoked
+
+
+def notice_is_current(key):
+    """Whether the owner was warned about this key and has not used it since.
+
+    A key used after its owner was warned has earned its keep, so the warning no
+    longer counts; if it falls unused again it needs a fresh one.
+    """
+    notified = _aware(key.owner_notified_at)
+    if notified is None:
+        return False
+    used = _aware(key.last_used_at)
+    return used is None or used < notified
+
+
+def key_standing(key, now=None):
+    """Where an unused key stands, as a short phrase for the page."""
+    now = now or utcnow()
+    if notice_is_current(key):
+        deadline = _aware(key.revoke_after)
+        if deadline is not None and deadline <= now:
+            return "due for revocation"
+        return f"owner told, revoke after {deadline:%-d %b}" if deadline else "owner told"
+    used = _aware(key.last_used_at)
+    return "never used" if used is None else f"last used {used.date()}"
+
+
+def is_due(key, now=None):
+    now = now or utcnow()
+    deadline = _aware(key.revoke_after)
+    return notice_is_current(key) and deadline is not None and deadline <= now
+
+
+def notice_email(owner_email, keys, deadline):
+    """The warning an owner gets: which keys, and the date they go."""
+    lines = "\n".join(f"  - {key.name} (created {key.created_at:%Y-%m-%d})" for key in keys)
+    when = f"{deadline:%-d %B %Y}"
+    return (
+        f"Your unused Visdom API keys will be switched off on {when}",
+        (
+            "Hello,\n\n"
+            "These API keys on your Visdom account have not been used in a while:\n\n"
+            f"{lines}\n\n"
+            f"To keep accounts tidy and safe we plan to switch them off on {when}. "
+            "If you still need one, using it before then keeps it active. "
+            "If you do not, there is nothing you need to do.\n\n"
+            "The Visdom team"
+        ),
+    )
+
+
+def notify_owners(db, key_ids, send):
+    """Warn the owners of these unused keys, one message per owner.
+
+    A key is only marked as warned once its owner's message went out, so a
+    failure to send can never lead to a key being revoked without warning.
+    Returns the keys warned and the owners who could not be reached.
+    """
+    wanted = {str(key_id) for key_id in key_ids}
+    by_owner = {}
+    for key, _why in unused_keys(db):
+        if str(key.id) in wanted and key.owner is not None:
+            by_owner.setdefault(key.owner.email, []).append(key)
+
+    now = utcnow()
+    deadline = now + datetime.timedelta(days=NOTICE_DAYS)
+    warned, unreachable = [], []
+    for owner_email, keys in by_owner.items():
+        subject, body = notice_email(owner_email, keys, deadline)
+        if not send(owner_email, subject, body):
+            unreachable.append(owner_email)
+            continue
+        for key in keys:
+            key.owner_notified_at = now
+            key.revoke_after = deadline
+            warned.append((str(key.id), key.name))
+    if warned:
+        db.commit()
+    return warned, unreachable
+
+
+def due_key_ids(db):
+    now = utcnow()
+    return [str(key.id) for key, _why in unused_keys(db) if is_due(key, now)]
+
+
+AUTOMATIC = "automatic"
+
+
+def revoke_due_keys(db):
+    """Switch off the keys whose owners were warned and whose date has passed.
+
+    The warning named the date, so this is keeping to it rather than deciding
+    anything new. A key used since its warning is no longer due and is left
+    alone. Each one is recorded in the audit trail, with nobody's name on it.
+    """
+    due = due_key_ids(db)
+    if not due:
+        return []
+    revoked = revoke_unused_keys(db, due)
+    for key_id, _name in revoked:
+        db.add(
+            AdminAction(
+                admin_email=AUTOMATIC,
+                action="update",
+                model="APIKey",
+                row_id=key_id,
+                changes={"is_active": False, "revoked_from": "notice period ended"},
+            )
+        )
+    if revoked:
+        db.commit()
+    return revoked
+
+
 def expired_links(db):
     """Shared links whose expiry has passed. They no longer work, so they are
     only a list of addresses somebody was once given access to."""
@@ -113,9 +250,72 @@ def answered_invites(db):
     )
 
 
+def _slug(row):
+    return row.workspace.slug if row.workspace else "unknown"
+
+
+def link_summary(link):
+    return {
+        "workspace": _slug(link),
+        "issued_to": link.invite_email or "anyone",
+        "expired": _aware(link.expires_at).date().isoformat(),
+    }
+
+
+def invite_summary(invite):
+    return {"workspace": _slug(invite), "email": invite.email}
+
+
+def _delete_listed(db, rows, ids, describe):
+    wanted = None if ids is None else {str(row_id) for row_id in ids}
+    removed = []
+    for row in rows:
+        if wanted is None or str(row.id) in wanted:
+            removed.append((str(row.id), describe(row)))
+            db.delete(row)
+    db.commit()
+    return removed
+
+
+def delete_expired_links(db, link_ids=None):
+    """Delete shared links past their expiry: the ones named, or every one.
+
+    Which links have expired is worked out again rather than taken from the
+    page, so a link whose expiry was pushed back since it loaded is kept.
+    Returns ``(id, summary)`` for each one removed, for the audit trail.
+    """
+    return _delete_listed(db, expired_links(db), link_ids, link_summary)
+
+
+def delete_answered_invites(db, invite_ids=None):
+    """Delete invites whose recipient has since signed up, as above."""
+    return _delete_listed(db, answered_invites(db), invite_ids, invite_summary)
+
+
+def leaving_accounts(db):
+    """Accounts that asked to be deleted, soonest first."""
+    return (
+        db.query(User)
+        .filter(User.deletion_requested_at.isnot(None))
+        .order_by(User.deletion_requested_at)
+        .all()
+    )
+
+
 def findings(db):
     """Everything worth a look, as sections the page can render in order."""
     return [
+        {
+            "title": "Accounts waiting to be deleted",
+            "note": (
+                f"Removed {account_deletion.GRACE_DAYS} days after asking, with any "
+                "workspace nobody else uses. Signing in cancels it."
+            ),
+            "rows": [
+                f"{user.email} - deleted on {account_deletion.delete_after(user).date()}"
+                for user in leaving_accounts(db)
+            ],
+        },
         {
             "title": "Workspaces with no active member",
             "note": "Unreachable through the app, and still holding whatever is on disk.",
@@ -126,28 +326,29 @@ def findings(db):
         },
         {
             "title": "Keys nobody is using",
-            "note": f"Active keys never used, or unused for {STALE_KEY_DAYS} days.",
+            "note": (
+                f"Active keys never used, or unused for {STALE_KEY_DAYS} days. Once an "
+                "owner has been told, the key is switched off by itself when its date passes."
+            ),
             "rows": [
                 f"{key.name} ({key.owner.email if key.owner else 'unknown'}) - {why}"
                 for key, why in unused_keys(db)
             ],
+            "manage": {"section": "keys", "label": "Manage these keys"},
         },
         {
             "title": "Shared links past their expiry",
             "note": "These no longer grant anything.",
             "rows": [
-                f"{link.workspace.slug if link.workspace else 'unknown'} - "
-                f"{link.invite_email or 'anyone'}, expired {_aware(link.expires_at).date()}"
+                f"{_slug(link)} - {link.invite_email or 'anyone'}, expired {_aware(link.expires_at).date()}"
                 for link in expired_links(db)
             ],
+            "manage": {"section": "links", "label": "Manage these links"},
         },
         {
             "title": "Invites to people who already signed up",
             "note": "Registering should have turned these into memberships.",
-            "rows": [
-                f"{invite.email} for "
-                f"{invite.workspace.slug if invite.workspace else 'unknown'}"
-                for invite in answered_invites(db)
-            ],
+            "rows": [f"{invite.email} for {_slug(invite)}" for invite in answered_invites(db)],
+            "manage": {"section": "invites", "label": "Manage these invites"},
         },
     ]

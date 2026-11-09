@@ -1,0 +1,185 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Account trash</h1>
+<div class="ap-page-subtitle">Lock accounts out without deleting anything, and delete for good only from here.</div>
+{% endblock %}
+
+{% block content %}
+{% include 'sqladmin/cleanup_styles.html' %}
+<style>
+  .ap-trash-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 28px 0 8px;
+  }
+
+  .ap-trash-title:first-child {
+    margin-top: 0;
+  }
+
+  .ap-trash-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 18px;
+    border-bottom: 1px solid var(--ap-hairline);
+  }
+
+  .ap-trash-filter label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+  }
+
+  .ap-trash-filter input {
+    min-width: 260px;
+    padding: 7px 10px;
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius-sm);
+    font-size: 14px;
+    background: var(--ap-surface);
+    color: var(--ap-ink);
+  }
+
+  .ap-trash-scroll {
+    max-height: 520px;
+    overflow-y: auto;
+  }
+
+  .ap-trash-scroll thead th {
+    position: sticky;
+    top: 0;
+    background: var(--ap-surface);
+    z-index: 1;
+  }
+
+  .ap-trash-count {
+    margin-left: auto;
+  }
+</style>
+
+<div class="col-12">
+  <h2 class="ap-trash-title">In the trash</h2>
+  <p class="ap-explain">
+    A trashed account cannot sign in and its API keys do not work, but nothing it owns has been
+    removed. Restoring puts it back as it was. The trash never empties itself: an account stays
+    here until someone deletes it for good.
+  </p>
+
+  {% if trashed %}
+  <form method="post" class="card">
+    <div class="ap-bulk">
+      <span class="ap-bulk-label">Ticked</span>
+      <button type="submit" class="ap-act" name="intent" value="restore"
+        {% if not may_trash %}disabled{% endif %}>Restore</button>
+      <button type="submit" class="ap-act is-danger" name="intent" value="delete" data-danger
+        {% if not may_delete %}disabled{% endif %}
+        data-confirm-label="Delete for good" data-confirm-title="Delete the ticked accounts for good?"
+        data-confirm="This cannot be undone. Each account goes, with the workspaces only it uses and their plots.">Delete for good</button>
+      <span class="ap-bulk-label ap-trash-count">{{ trashed | length }} in the trash</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter">
+        <thead>
+          <tr>
+            <th class="w-1"><input class="form-check-input m-0" type="checkbox" aria-label="Tick all in the trash"
+              data-select-all="row_ids"></th>
+            <th>Email</th>
+            <th>Trashed</th>
+            <th>By</th>
+            <th>Deleting it would also remove</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for account in trashed %}
+          <tr>
+            <td><input class="form-check-input m-0" type="checkbox" name="row_ids" value="{{ account.id }}"
+              aria-label="Tick {{ account.email }}"></td>
+            <td>{{ account.email }}</td>
+            <td>{{ account.when }} UTC</td>
+            <td>{{ account.by }}</td>
+            <td>
+              {% if account.blocked_by %}
+              Cannot be deleted yet: it owns {{ account.blocked_by | join(", ") }}, which other people use.
+              {% elif account.goes_with %}
+              {{ account.goes_with | join(", ") }}
+              {% else %}
+              nothing else
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% else %}
+  <div class="card"><div class="card-body">The trash is empty.</div></div>
+  {% endif %}
+
+  <h2 class="ap-trash-title">Move accounts to the trash</h2>
+  <div class="card">
+    <form method="get" class="ap-trash-filter">
+      <label>
+        Search
+        <input type="search" name="q" value="{{ search }}" placeholder="Start typing an email or username"
+        autocomplete="off" data-live-filter {% if matching > accounts | length %}data-truncated="1"{% endif %}>
+      </label>
+      <button type="submit" class="ap-act">Show</button>
+      {% if search %}<a class="ap-act" href="?">Clear</a>{% endif %}
+    </form>
+    {% if accounts %}
+    <form method="post">
+      <div class="ap-bulk">
+        <button type="submit" class="ap-act is-danger" name="intent" value="trash" data-danger
+          {% if not may_trash %}disabled{% endif %}
+          data-confirm-label="Move to trash" data-confirm-title="Move the ticked accounts to the trash?"
+          data-confirm="They are signed out and cannot sign in until restored. Nothing is deleted.">Move ticked accounts to the trash</button>
+        <span class="ap-bulk-label" data-ticked-count></span>
+        <span class="ap-bulk-label ap-trash-count" data-live-count>
+          {% if matching > accounts | length %}
+          Showing the first {{ accounts | length }} of {{ matching }}. Narrow it with the search.
+          {% else %}
+          {{ matching }} account{{ '' if matching == 1 else 's' }}
+          {% endif %}
+        </span>
+      </div>
+      <div class="table-responsive ap-trash-scroll">
+        <table class="table card-table table-vcenter">
+          <thead>
+            <tr>
+              <th class="w-1"><input class="form-check-input m-0" type="checkbox" aria-label="Tick all shown"
+                data-select-all="row_ids"></th>
+              <th>Email</th>
+              <th>Username</th>
+              <th>Plan</th>
+              <th>Joined</th>
+              <th>Last signed in</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for account in accounts %}
+            <tr data-filter-text="{{ account.email | lower }} {{ account.username | lower }}">
+              <td><input class="form-check-input m-0" type="checkbox" name="row_ids" value="{{ account.id }}"
+                aria-label="Tick {{ account.email }}"></td>
+              <td>{{ account.email }}</td>
+              <td>{{ account.username }}</td>
+              <td>{{ account.plan }}</td>
+              <td>{{ account.joined }}</td>
+              <td>{{ account.last_seen }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+    {% else %}
+    <div class="card-body">No account matches that.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

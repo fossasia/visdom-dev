@@ -198,6 +198,11 @@ async def refresh_activity() -> None:
     await asyncio.to_thread(cached_activity)
 
 
+def known_snapshot() -> dict:
+    """The last snapshot fetched, without asking the instances again."""
+    return _cache["value"]
+
+
 def known_activity() -> dict[str, dict]:
     """The last answer fetched, without asking the instances again."""
     return _cache["value"]["workspaces"]

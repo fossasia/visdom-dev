@@ -1,0 +1,205 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<h1 class="ap-page-title">Plan moves</h1>
+<div class="ap-page-subtitle">Move accounts between plans: a whole plan at once, or the ones you pick.</div>
+{% endblock %}
+
+{% block content %}
+{% include 'sqladmin/cleanup_styles.html' %}
+<style>
+  .ap-move-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .ap-move-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ap-ink-soft);
+  }
+
+  .ap-move-field select,
+  .ap-move-field input {
+    min-width: 200px;
+    padding: 7px 10px;
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius-sm);
+    font-size: 14px;
+    background: var(--ap-surface);
+    color: var(--ap-ink);
+  }
+
+  .ap-pick-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 28px 0 8px;
+  }
+
+  .ap-pick-filter {
+    border-bottom: 1px solid var(--ap-hairline);
+  }
+
+  .ap-pick-scroll {
+    max-height: 560px;
+    overflow-y: auto;
+  }
+
+  .ap-pick-scroll thead th {
+    position: sticky;
+    top: 0;
+    background: var(--ap-surface);
+    z-index: 1;
+  }
+
+  .ap-bulk select {
+    padding: 5px 10px;
+    border: 1px solid var(--ap-hairline);
+    border-radius: var(--ap-radius-sm);
+    font-size: 13px;
+    background: var(--ap-surface);
+    color: var(--ap-ink);
+  }
+
+  .ap-pick-count {
+    margin-left: auto;
+  }
+</style>
+
+<div class="col-12">
+  <p class="ap-explain">
+    Everyone on the plan you pick is moved to the other one. To give people more room without
+    moving anybody, change what their current plan allows on the Plans page instead: that reaches
+    every account on it at once, including accounts that register later.
+  </p>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter">
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Accounts on it</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for plan in plans %}
+          <tr>
+            <td>{{ plan.name }} <span class="ap-bulk-label">{{ plan.id }}</span></td>
+            <td>{{ plan.accounts }}</td>
+            <td>{% if plan.archived %}<span class="ap-bulk-label">archived</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <form method="post" class="ap-move-form">
+      <label class="ap-move-field">
+        Move everyone on
+        <select name="from_plan" required>
+          {% for plan in plans %}
+          <option value="{{ plan.id }}">{{ plan.name }} ({{ plan.accounts }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="ap-move-field">
+        to
+        <select name="to_plan" required>
+          {% for plan in movable %}
+          <option value="{{ plan.id }}">{{ plan.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="ap-act is-danger" data-danger data-confirm-label="Move them"
+        data-confirm-title="Move every account on that plan?"
+        data-confirm="Each account keeps its workspaces and its data. Only what it is allowed changes, and it changes at once.">Move accounts</button>
+    </form>
+  </div>
+
+  <h2 class="ap-pick-title">Pick accounts</h2>
+  <p class="ap-explain">
+    Search or filter, tick the accounts you want, and move them to one plan. They can be on
+    different plans to begin with.
+  </p>
+
+  <div class="card">
+  <form method="get" class="ap-move-form ap-pick-filter">
+    <label class="ap-move-field">
+      Search
+      <input type="search" name="q" value="{{ search }}" placeholder="Start typing an email or username"
+        autocomplete="off" data-live-filter {% if matching > accounts | length %}data-truncated="1"{% endif %}>
+    </label>
+    <label class="ap-move-field">
+      On plan
+      <select name="plan">
+        <option value="">Any plan</option>
+        {% for plan in plans %}
+        <option value="{{ plan.id }}" {% if plan.id == on_plan %}selected{% endif %}>{{ plan.name }} ({{ plan.accounts }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="ap-act">Show</button>
+    {% if search or on_plan %}<a class="ap-act" href="?">Clear</a>{% endif %}
+  </form>
+
+  {% if accounts %}
+  <form method="post">
+    <div class="ap-bulk">
+      <span class="ap-bulk-label">Move the ticked accounts to</span>
+      <select name="to_plan" required>
+        {% for plan in movable %}
+        <option value="{{ plan.id }}">{{ plan.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="ap-act is-danger" name="intent" value="move_picked" data-danger
+        data-confirm-label="Move them" data-confirm-title="Move the ticked accounts?"
+        data-confirm="Each account keeps its workspaces and its data. Only what it is allowed changes, and it changes at once.">Move ticked accounts</button>
+      <span class="ap-bulk-label" data-ticked-count></span>
+      <span class="ap-bulk-label ap-pick-count" data-live-count>
+        {% if matching > accounts | length %}
+        Showing the first {{ accounts | length }} of {{ matching }}. Narrow it with the search.
+        {% else %}
+        {{ matching }} account{{ '' if matching == 1 else 's' }}
+        {% endif %}
+      </span>
+    </div>
+    <div class="table-responsive ap-pick-scroll">
+      <table class="table card-table table-vcenter">
+        <thead>
+          <tr>
+            <th class="w-1"><input class="form-check-input m-0" type="checkbox" aria-label="Tick all shown"
+              data-select-all="row_ids"></th>
+            <th>Email</th>
+            <th>Username</th>
+            <th>Plan</th>
+            <th>Joined</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for account in accounts %}
+          <tr data-filter-text="{{ account.email | lower }} {{ account.username | lower }}">
+            <td><input class="form-check-input m-0" type="checkbox" name="row_ids" value="{{ account.id }}"
+              aria-label="Tick {{ account.email }}"></td>
+            <td>{{ account.email }}</td>
+            <td>{{ account.username }}</td>
+            <td>{{ account.plan }}</td>
+            <td>{{ account.joined }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% else %}
+  <div class="card-body">No account matches that.</div>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

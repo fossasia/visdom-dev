@@ -7,9 +7,9 @@
 """The subscription plan catalog and per-tier limits, read from the database.
 
 Plans used to be a constant in this module, so changing what a tier included
-meant a code change and a deploy. They now live in the `plans` table; this module
-stays the one place that reads them, so nothing that asks about a limit needs
-to know where plans are stored.
+meant a code change and a deploy. They now live in the `plans` table and are
+edited from the admin console; this module stays the one place that reads them,
+so nothing that asks about a limit needs to know where plans are stored.
 
 Two different questions are asked of a plan and they have different answers.
 What an account may pick for itself is only what is public and not archived,
