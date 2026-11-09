@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -10,6 +10,7 @@ import { COOKIES, PRIVACY } from './content/legal';
 import Dashboard from './pages/Dashboard';
 import JoinWorkspace from './pages/JoinWorkspace';
 import Start from './pages/Start';
+import NotFound from './pages/NotFound';
 
 function App() {
   return (
@@ -37,7 +38,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
