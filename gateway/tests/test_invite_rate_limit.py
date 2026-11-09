@@ -142,3 +142,4 @@ def test_the_limiting_invite_itself_is_still_accepted(client, make_user, db_sess
 
     over_cap = _invite(client, owner, workspace, _ghost_email(DAILY_INVITE_LIMIT))
     assert over_cap.status_code == 429, over_cap.text
+    
