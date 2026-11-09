@@ -102,15 +102,14 @@ def test_an_unknown_role_is_refused_everywhere():
     assert roles.editable_fields("stranger", "User") == set()
 
 
-def test_only_a_superadmin_sees_the_list_of_shared_links():
-    """A shared link's id is its join token, and the list carries it.
+def test_no_role_sees_the_list_of_shared_links():
+    """A shared link's id is its join token, and a list page would carry it.
 
-    An admin still clears expired links from the cleanup page, where the token
-    no longer opens anything.
+    Expired links are cleared from the cleanup page, where the token no longer
+    opens anything.
     """
-    assert not roles.can_see(roles.SUPPORT, "SharedLink")
-    assert not roles.can_see(roles.ADMIN, "SharedLink")
-    assert roles.can_see(roles.SUPERADMIN, "SharedLink")
+    for role in roles.ROLES:
+        assert not roles.can_see(role, "SharedLink")
     assert roles.can_remove(roles.ADMIN, "SharedLink")
 
 

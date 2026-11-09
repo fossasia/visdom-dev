@@ -827,26 +827,6 @@ class WorkspaceInviteAdmin(RoleScopedView, model=WorkspaceInvite):
     column_searchable_list = [WorkspaceInvite.email]
 
 
-class SharedLinkAdmin(RoleScopedView, model=SharedLink):
-    name = "Shared link"
-    name_plural = "Shared links"
-    icon = "fa-solid fa-link"
-    category = "Access"
-    category_icon = "fa-solid fa-key"
-    column_list = [
-        SharedLink.workspace,
-        SharedLink.role,
-        SharedLink.invite_email,
-        SharedLink.expires_at,
-    ]
-    column_labels = {SharedLink.workspace: "Workspace", SharedLink.invite_email: "Issued to"}
-    column_formatters = {
-        SharedLink.workspace: lambda m, a: _slug_of(m.workspace),
-        SharedLink.expires_at: _to_the_minute("expires_at", "never"),
-    }
-    column_details_exclude_list = [SharedLink.password_hash]
-
-
 def _other_active_superadmins(db, admin):
     """Superadmins other than this one who can still sign in.
 
@@ -2225,7 +2205,6 @@ VIEWS = (
     MembershipAdmin,
     APIKeyAdmin,
     WorkspaceInviteAdmin,
-    SharedLinkAdmin,
     AdminUserAdmin,
     PlanAdmin,
     AdminActionAdmin,
@@ -2237,7 +2216,6 @@ _CARDS = (
     ("Workspaces", Workspace, "workspace"),
     ("Memberships", Membership, "membership"),
     ("API keys", APIKey, "api-key"),
-    ("Shared links", SharedLink, "shared-link"),
     ("Staff", AdminUser, "admin-user"),
 )
 

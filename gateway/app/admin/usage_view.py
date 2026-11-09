@@ -17,9 +17,8 @@ from sqlalchemy.orm import joinedload
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.admin import roles, server_stats
+from app.admin import panel, roles, server_stats
 from app.admin.panel import ROLE_KEY
-from app.database import SessionLocal
 from app.models import Workspace, WorkspaceUsageHour
 from app.routers.usage import month_start
 from app.usage import latest_storage
@@ -188,7 +187,7 @@ class UsageView(BaseView):
         """
         if not self._allowed(request):
             return Response("Forbidden", status_code=403)
-        db = SessionLocal()
+        db = panel.SessionLocal()
         try:
             report = usage_report(db)
             server = server_report(db)

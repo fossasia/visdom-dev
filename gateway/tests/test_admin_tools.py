@@ -13,6 +13,7 @@ from app.models import AdminUser, APIKey, Membership, User, Workspace, Workspace
 from app.security import get_password_hash
 
 
+@pytest.fixture
 def admin_client(db_session, monkeypatch):
     """A signed-in superadmin, and a session whose writes the panel can see.
 
@@ -29,9 +30,6 @@ def admin_client(db_session, monkeypatch):
     staff_sessions = sessionmaker(bind=engine)
     monkeypatch.setattr(panel, "SessionLocal", staff_sessions)
     monkeypatch.setattr(panel, "engine", engine)
-    from app.admin import usage_view
-
-    monkeypatch.setattr(usage_view, "SessionLocal", staff_sessions)
 
     staff_db = staff_sessions()
     staff_db.add(

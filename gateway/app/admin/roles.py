@@ -36,7 +36,7 @@ _VISIBLE = {
     VIEWER: {"User", "Workspace", "Membership"},
     SUPPORT: _SUPPORT_VISIBLE,
     ADMIN: _SUPPORT_VISIBLE,
-    SUPERADMIN: _SUPPORT_VISIBLE | {"SharedLink", "AdminUser", "Plan", "AdminAction"},
+    SUPERADMIN: _SUPPORT_VISIBLE | {"AdminUser", "Plan", "AdminAction"},
 }
 
 _CHANGEABLE = {

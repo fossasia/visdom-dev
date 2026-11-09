@@ -24,7 +24,6 @@ PAGES = [
     ("/admin/membership/list", "memberships"),
     ("/admin/api-key/list", "api keys"),
     ("/admin/workspace-invite/list", "invites"),
-    ("/admin/shared-link/list", "shared links"),
     ("/admin/plan/list", "plans"),
     ("/admin/admin-user/list", "staff accounts"),
     ("/admin/admin-action/list", "the audit trail"),
