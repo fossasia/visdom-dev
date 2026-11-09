@@ -24,9 +24,14 @@ PAGES = [
     ("/admin/membership/list", "memberships"),
     ("/admin/api-key/list", "api keys"),
     ("/admin/workspace-invite/list", "invites"),
+    ("/admin/plan/list", "plans"),
     ("/admin/admin-user/list", "staff accounts"),
     ("/admin/admin-action/list", "the audit trail"),
     ("/admin/janitor", "the cleanup page"),
+    ("/admin/janitor?section=keys", "the unused keys page"),
+    ("/admin/account-trash", "the account trash"),
+    ("/admin/plan-moves", "plan moves"),
+    ("/admin/usage", "the usage page"),
     ("/admin/limit-bypass", "the limit bypass page"),
 ]
 

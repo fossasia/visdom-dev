@@ -18,7 +18,10 @@ KINDS = {
     "apikey": "API key",
     "membership": "membership",
     "adminuser": "staff account",
+    "plan": "plan",
+    "sharedlink": "shared link",
     "workspaceinvite": "invite",
+    "platformswitch": "platform switch",
     "staffgrant": "permission",
 }
 
@@ -26,11 +29,20 @@ FIELDS = {
     "is_active": "active",
     "tier": "plan",
     "role": "role",
+    "name": "name",
+    "price": "price",
+    "sort_order": "position in lists",
+    "is_public": "public",
+    "archived_at": "archived",
+    "limits": "limits",
+    "features": "features",
+    "retention_days": "days of history kept",
     "password_hash": "password",
+    "bypass_limits": "limit bypass",
     "email": "email",
 }
 
-_HIDDEN = {"was", "email"}
+_HIDDEN = {"was", "email", "moved_in_bulk", "moved_from", "revoked_from", "deleted_from", "reason"}
 
 
 def kind_of(model) -> str:
@@ -56,6 +68,12 @@ def _plain(value) -> str:
     return str(value)
 
 
+def _limits(value) -> str:
+    if not isinstance(value, dict):
+        return _plain(value)
+    return ", ".join(f"{k.replace('_', ' ')} {'unlimited' if v is None else v}" for k, v in value.items())
+
+
 def _others(changes: dict, done: set, was: dict) -> str:
     parts = []
     for field, value in changes.items():
@@ -64,6 +82,8 @@ def _others(changes: dict, done: set, was: dict) -> str:
         label = FIELDS.get(field, field.replace("_", " "))
         if field == "password_hash":
             parts.append("set a new password")
+        elif field == "limits":
+            parts.append(f"limits set to {_limits(value)}")
         elif field in was:
             parts.append(f"{label} changed from {_plain(was[field])} to {_plain(value)}")
         else:
@@ -89,16 +109,43 @@ def sentence(action, model, changes, subject) -> str:
             done.add("role")
         done.update({"id", "is_active", "password_hash"})
     elif verb == "delete":
-        return f"Deleted {kind} {subject}."
+        if key == "user":
+            email, username = changes.get("email"), changes.get("username")
+            named = f"{email} ({username})" if email and username else email or subject
+            lead = f"Deleted account {named} for good"
+            if changes.get("reason"):
+                lead += f" ({changes['reason']})"
+            removed = changes.get("workspaces_removed") or []
+            if removed:
+                lead += f", with its workspace{'' if len(removed) == 1 else 's'} {', '.join(removed)}"
+            return lead + "."
+        lead = f"Deleted {kind} {subject}"
+        if changes.get("deleted_from"):
+            lead += f" from the {changes['deleted_from']} page"
+        return lead + "."
     elif key == "user":
-        if "tier" in changes:
-            source = was.get("tier")
+        if "trashed" in changes:
+            lead = (
+                f"Moved account {subject} to the trash"
+                if changes["trashed"]
+                else f"Restored account {subject} from the trash"
+            )
+            done.add("trashed")
+        elif "tier" in changes:
+            source = changes.get("moved_from", was.get("tier"))
             lead = (
                 f"Moved account {subject} from the {source} plan to {changes['tier']}"
                 if source
                 else f"Put account {subject} on the {changes['tier']} plan"
             )
             done.add("tier")
+        elif "bypass_limits" in changes:
+            lead = (
+                f"Switched the limit bypass on for account {subject}"
+                if changes["bypass_limits"]
+                else f"Switched the limit bypass off for account {subject}"
+            )
+            done.add("bypass_limits")
         elif "is_active" in changes:
             lead = f"Switched account {subject} back on" if changes["is_active"] else f"Suspended account {subject}"
             done.add("is_active")
@@ -109,10 +156,19 @@ def sentence(action, model, changes, subject) -> str:
     elif key == "apikey":
         if changes.get("is_active") is False:
             lead = f"Revoked API key {subject}"
+            source = changes.get("revoked_from")
+            if source == "cleanup":
+                lead += " from the cleanup page"
+            elif source:
+                lead += f" ({source})"
             done.add("is_active")
         elif changes.get("is_active") is True:
             lead = f"Switched API key {subject} back on"
             done.add("is_active")
+        elif "revoke_after_days" in changes:
+            days = changes["revoke_after_days"]
+            lead = f"Warned the owner of API key {subject} that it will be revoked in {days} days"
+            done.add("revoke_after_days")
     elif key == "membership" and "role" in changes:
         lead = f"Changed {subject} to {changes['role']}"
         done.add("role")
@@ -123,6 +179,13 @@ def sentence(action, model, changes, subject) -> str:
         if changes["granted"]:
             return f"Gave {who} permission to {what}."
         return f"Took away from {who} the permission to {what}."
+    elif key == "platformswitch" and "is_on" in changes:
+        lead = (
+            "Switched the limit bypass on for every account"
+            if changes["is_on"]
+            else "Switched the limit bypass off for every account"
+        )
+        done.add("is_on")
 
     rest = _others(changes, done, was)
     if lead is None:

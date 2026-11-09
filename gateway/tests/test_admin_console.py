@@ -164,7 +164,7 @@ def test_a_deleted_account_is_named_by_email_and_username(admin_client):
 
     trail = admin_client.get("/admin/admin-action/list", follow_redirects=False)
     assert trail.status_code == 200
-    assert "Deleted account gone@example.com (gone-user)." in trail.text
+    assert "Deleted account gone@example.com (gone-user) for good." in trail.text
 
 
 def test_a_deleted_account_with_no_name_kept_does_not_show_its_id(admin_client):
@@ -177,7 +177,7 @@ def test_a_deleted_account_with_no_name_kept_does_not_show_its_id(admin_client):
 
     trail = admin_client.get("/admin/admin-action/list", follow_redirects=False)
     assert trail.status_code == 200
-    assert "Deleted account (name not recorded)." in trail.text
+    assert "Deleted account (name not recorded) for good." in trail.text
     assert row_id not in trail.text
 
 

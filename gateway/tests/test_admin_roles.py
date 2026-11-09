@@ -73,6 +73,13 @@ def test_removing_a_membership_starts_at_admin():
     assert roles.can_remove(roles.SUPERADMIN, "Membership")
 
 
+def test_deleting_leftover_links_and_invites_starts_at_admin():
+    for model in ("SharedLink", "WorkspaceInvite"):
+        assert not roles.can_remove(roles.SUPPORT, model)
+        assert roles.can_remove(roles.ADMIN, model)
+        assert roles.can_remove(roles.SUPERADMIN, model)
+
+
 def test_only_a_superadmin_may_set_someones_password():
     assert "password_hash" not in roles.editable_fields(roles.SUPPORT, "User")
     assert "password_hash" not in roles.editable_fields(roles.ADMIN, "User")
@@ -95,11 +102,24 @@ def test_an_unknown_role_is_refused_everywhere():
     assert roles.editable_fields("stranger", "User") == set()
 
 
+def test_no_role_sees_the_list_of_shared_links():
+    """A shared link's id is its join token, and a list page would carry it.
+
+    Expired links are cleared from the cleanup page, where the token no longer
+    opens anything.
+    """
+    for role in roles.ROLES:
+        assert not roles.can_see(role, "SharedLink")
+    assert roles.can_remove(roles.ADMIN, "SharedLink")
+
+
 def test_no_role_may_act_on_a_model_it_cannot_see():
     """Acting on a record implies reading it, so the tables must not disagree."""
     for role in roles.ROLES:
         for table in (roles._CHANGEABLE, roles._REMOVABLE, roles._ADDABLE):
             for model in table[role]:
+                if table is roles._REMOVABLE and model == "SharedLink":
+                    continue
                 assert roles.can_see(role, model), f"{role} may act on unseen {model}"
         for model in roles._EDITABLE_FIELDS.get(role, {}):
             assert roles.can_change(role, model), f"{role} has fields on unchangeable {model}"
@@ -113,3 +133,14 @@ def test_privilege_only_grows_up_the_ladder():
         assert roles._REMOVABLE[lower] <= roles._REMOVABLE[higher]
         assert roles._ADDABLE[lower] <= roles._ADDABLE[higher]
 
+
+def test_only_a_superadmin_sees_or_edits_plans():
+    """A plan decides what every account on it gets, so it is not a support or
+    admin decision."""
+    for role in (roles.SUPPORT, roles.ADMIN):
+        assert not roles.can_see(role, "Plan")
+        assert not roles.can_change(role, "Plan")
+        assert not roles.can_add(role, "Plan")
+    assert roles.can_see(roles.SUPERADMIN, "Plan")
+    assert roles.can_add(roles.SUPERADMIN, "Plan")
+    assert "limits" in roles.editable_fields(roles.SUPERADMIN, "Plan")

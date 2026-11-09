@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import account_deletion, payments, retention, usage_rollup
-from app.admin import mount_admin
+from app.admin import janitor, mount_admin
 from app.admin.activity import activity_per_instance
 from app.config import settings
 from app.database import SessionLocal
@@ -85,6 +85,23 @@ async def _delete_accounts_forever(hours: int) -> None:
             logging.exception("account deletion tick failed")
 
 
+async def _revoke_due_keys_forever(hours: int) -> None:
+    """Switch off unused keys once the date their owners were given has passed."""
+    while True:
+        await asyncio.sleep(hours * 3600)
+        db = SessionLocal()
+        try:
+            if usage_rollup.take_tick(db):
+                revoked = await asyncio.to_thread(janitor.revoke_due_keys, db)
+                if revoked:
+                    logging.info("revoked %d unused key(s) at the end of their notice", len(revoked))
+        except Exception:
+            logging.exception("key revocation tick failed")
+            db.rollback()
+        finally:
+            db.close()
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
     seconds = settings.USAGE_SAMPLE_SECONDS
@@ -99,6 +116,8 @@ async def lifespan(_app: FastAPI):
         tasks.append(asyncio.create_task(_sweep_retention_forever(hours)))
     if settings.ACCOUNT_DELETION_HOURS > 0:
         tasks.append(asyncio.create_task(_delete_accounts_forever(settings.ACCOUNT_DELETION_HOURS)))
+    if settings.KEY_REVOKE_HOURS > 0:
+        tasks.append(asyncio.create_task(_revoke_due_keys_forever(settings.KEY_REVOKE_HOURS)))
     try:
         yield
     finally:

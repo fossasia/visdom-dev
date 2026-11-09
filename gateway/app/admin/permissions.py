@@ -23,9 +23,19 @@ from app.admin import roles
 from app.models import AdminUser, StaffGrant, utcnow
 
 SEE_AUDIT = "see_audit"
+TRASH_ACCOUNTS = "trash_accounts"
+DELETE_ACCOUNTS = "delete_accounts"
 
 GRANTABLE = {
     SEE_AUDIT: ("See the audit trail", "Read who changed what, and when."),
+    TRASH_ACCOUNTS: (
+        "Trash and restore accounts",
+        "Move accounts to the trash and take them back out. Nothing is deleted.",
+    ),
+    DELETE_ACCOUNTS: (
+        "Delete accounts for good",
+        "Remove trashed accounts with their workspaces and plots. Cannot be undone.",
+    ),
 }
 
 GRANTS_KEY = "admin_grants"

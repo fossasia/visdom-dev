@@ -237,6 +237,34 @@ def remove(db: Session, user: User, reason: str, staff_id=None, staff_email=None
     return {"user_id": row_id, "workspaces_removed": removed}
 
 
+def trash(db: Session, user: User, by: str | None) -> bool:
+    """Put an account in the trash. Returns whether it was not there already.
+
+    Nothing is removed. The account can no longer sign in, its sessions are
+    closed and its API keys stop working, until someone restores it. Unlike a
+    deletion the holder asked for, signing in does not undo this.
+    """
+    if user.trashed_at is not None:
+        return False
+    user.trashed_at = utcnow()
+    user.trashed_by = by
+    user.is_active = False
+    user.token_version = (user.token_version or 0) + 1
+    db.commit()
+    return True
+
+
+def restore(db: Session, user: User) -> bool:
+    """Take an account out of the trash, as it was. Returns whether it was there."""
+    if user.trashed_at is None:
+        return False
+    user.trashed_at = None
+    user.trashed_by = None
+    user.is_active = True
+    db.commit()
+    return True
+
+
 def erase_due(db: Session, now: datetime.datetime | None = None) -> int:
     erased = 0
     for user_id in due_ids(db, now):

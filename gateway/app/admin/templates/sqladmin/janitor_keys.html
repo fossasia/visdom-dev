@@ -1,0 +1,101 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="ap-crumb"><a href="?">Cleanup</a> / Unused API keys</div>
+<h1 class="ap-page-title">Unused API keys</h1>
+<div class="ap-page-subtitle">Active keys never used, or unused for {{ stale_days }} days.</div>
+{% endblock %}
+
+{% block content %}
+{% include 'sqladmin/cleanup_styles.html' %}
+<style>
+  .ap-standing.is-due {
+    color: #b42318;
+    font-weight: 600;
+  }
+
+  .ap-standing.is-told {
+    color: #8a5a00;
+  }
+</style>
+
+<div class="col-12">
+  <p class="ap-explain">
+    Notifying an owner emails them the keys in question and the date they will be switched off,
+    {{ notice_days }} days from now. Using a key before then keeps it. Revoking switches a key off
+    at once; it can be switched back on from API keys.
+  </p>
+
+  {% if not email_ready %}
+  <div class="ap-warn">Email is not set up yet, so owners cannot be notified from here. Revoking still works.</div>
+  {% endif %}
+
+  {% if rows %}
+  <form method="post" class="card">
+    <div class="ap-bulk">
+      <span class="ap-bulk-label">Selected</span>
+      <button type="submit" class="ap-act" name="intent" value="notify"
+        {% if not (may_revoke and email_ready) %}disabled{% endif %}
+        data-confirm-title="Notify owners?" data-confirm-label="Send notice"
+        data-confirm="The owners of the selected keys are emailed that their keys will be switched off in {{ notice_days }} days unless used.">Notify owners</button>
+      <button type="submit" class="ap-act is-danger" name="intent" value="revoke"
+        {% if not may_revoke %}disabled{% endif %}
+        data-danger data-confirm-title="Revoke the selected keys?" data-confirm-label="Revoke"
+        data-confirm="They stop working at once. Each can be switched back on from API keys.">Revoke</button>
+      <span class="ap-bulk-label">All</span>
+      <button type="submit" class="ap-act is-danger" name="intent" value="revoke_all"
+        {% if not may_revoke %}disabled{% endif %}
+        data-danger data-confirm-title="Revoke all {{ rows | length }} unused keys?" data-confirm-label="Revoke all"
+        data-confirm="Every key listed here stops working at once. Each can be switched back on from API keys.">Revoke all {{ rows | length }}</button>
+      {% if due_count %}
+      <button type="submit" class="ap-act is-danger" name="intent" value="revoke_due"
+        {% if not may_revoke %}disabled{% endif %}
+        data-danger data-confirm-title="Revoke {{ due_count }} keys past notice?" data-confirm-label="Revoke"
+        data-confirm="Their owners were told and the notice period has ended without the keys being used.">Revoke {{ due_count }} past notice</button>
+      {% endif %}
+    </div>
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter text-nowrap">
+        <thead>
+          <tr>
+            <th class="w-1"><input class="form-check-input m-0" type="checkbox" aria-label="Select all"
+              data-select-all="key_ids"></th>
+            <th>Key</th>
+            <th>Owner</th>
+            <th>Created</th>
+            <th>Standing</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><input class="form-check-input m-0" type="checkbox" name="key_ids" value="{{ row.id }}" aria-label="Select {{ row.name }}"></td>
+            <td>{{ row.name }}</td>
+            <td>{{ row.owner }}</td>
+            <td>{{ row.created.strftime("%Y-%m-%d") if row.created else "" }}</td>
+            <td><span class="ap-standing {% if row.due %}is-due{% elif row.told %}is-told{% endif %}">{{ row.standing }}</span></td>
+            <td>
+              <div class="ap-row-actions">
+                <button type="submit" class="ap-act" name="notify_one" value="{{ row.id }}"
+                  {% if not (may_revoke and email_ready) or row.told %}disabled{% endif %}
+                  {% if not email_ready %}title="Email is not set up yet"{% elif row.told %}title="The owner has already been told"{% endif %}
+                  data-confirm-title="Notify the owner of {{ row.name }}?" data-confirm-label="Send notice"
+                  data-confirm="{{ row.owner }} is emailed that this key will be switched off in {{ notice_days }} days unless used.">Notify owner</button>
+                <button type="submit" class="ap-act is-danger" name="revoke_one" value="{{ row.id }}"
+                  {% if not may_revoke %}disabled{% endif %}
+                  data-danger data-confirm-title="Revoke {{ row.name }}?" data-confirm-label="Revoke"
+                  data-confirm="It stops working at once. It can be switched back on from API keys.">Revoke</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% else %}
+  <div class="card"><div class="card-body">No unused keys. Nothing to clean up here.</div></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -36,28 +36,28 @@ _VISIBLE = {
     VIEWER: {"User", "Workspace", "Membership"},
     SUPPORT: _SUPPORT_VISIBLE,
     ADMIN: _SUPPORT_VISIBLE,
-    SUPERADMIN: _SUPPORT_VISIBLE | {"AdminUser", "AdminAction"},
+    SUPERADMIN: _SUPPORT_VISIBLE | {"AdminUser", "Plan", "AdminAction"},
 }
 
 _CHANGEABLE = {
     VIEWER: set(),
     SUPPORT: {"APIKey", "User", "Workspace", "Membership"},
     ADMIN: {"APIKey", "User", "Workspace", "Membership"},
-    SUPERADMIN: {"APIKey", "User", "Workspace", "Membership", "AdminUser"},
+    SUPERADMIN: {"APIKey", "User", "Workspace", "Membership", "AdminUser", "Plan"},
 }
 
 _REMOVABLE = {
     VIEWER: set(),
     SUPPORT: set(),
-    ADMIN: {"Membership"},
-    SUPERADMIN: {"Membership"},
+    ADMIN: {"Membership", "SharedLink", "WorkspaceInvite"},
+    SUPERADMIN: {"Membership", "SharedLink", "WorkspaceInvite"},
 }
 
 _ADDABLE = {
     VIEWER: set(),
     SUPPORT: set(),
     ADMIN: set(),
-    SUPERADMIN: {"AdminUser"},
+    SUPERADMIN: {"AdminUser", "Plan"},
 }
 
 _ENTITLEMENT_FIELDS = {
@@ -79,6 +79,17 @@ _EDITABLE_FIELDS = {
         _ENTITLEMENT_FIELDS,
         User=_ENTITLEMENT_FIELDS["User"] | {"password_hash", "bypass_limits"},
         AdminUser={"is_active"},
+        Plan={
+            "name",
+            "price",
+            "sort_order",
+            "is_public",
+            "archived_at",
+            "limits",
+            "features",
+            "retention_days",
+            "stripe_price_id",
+        },
     ),
 }
 
@@ -124,6 +135,15 @@ def can_bypass_limits(role):
     sits with superadmins only.
     """
     return "bypass_limits" in editable_fields(role, "User")
+
+
+def can_trash_accounts(role):
+    """Whether this role may put accounts in the trash, restore them, or delete them.
+
+    One role only. Trashing locks a person out and deleting cannot be undone,
+    so neither is a day to day support action.
+    """
+    return role == SUPERADMIN
 
 
 def is_valid(role):
