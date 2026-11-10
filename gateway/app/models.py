@@ -141,6 +141,11 @@ class Workspace(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     is_active = Column(Boolean, default=True, nullable=False, server_default="true")
     trashed_at = Column(DateTime(timezone=True), nullable=True)
+    # When the last retention email went out, and which environments it, or an
+    # earlier one, named: {env id: ISO time of the first notice naming it}.
+    # Only a named environment that has had the full notice can be removed.
+    retention_warned_at = Column(DateTime(timezone=True), nullable=True)
+    retention_notice = Column(JSON(none_as_null=True), nullable=True)
 
     creator = relationship("User", foreign_keys=[created_by])
     memberships = relationship("Membership", back_populates="workspace", cascade="all, delete-orphan")
@@ -347,3 +352,8 @@ class PlatformSwitch(Base):
     is_on = Column(Boolean, nullable=False, default=False, server_default="false")
     changed_at = Column(DateTime(timezone=True), nullable=True)
     changed_by = Column(String, nullable=True)
+
+
+# Registers the flush hook that clears retention notice on a plan, bypass or
+# owner change. Imported last because it needs the classes above.
+from app import retention_reset  # noqa: E402,F401

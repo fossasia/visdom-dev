@@ -17,6 +17,28 @@ runs this as a report for a while first, and what it says it would remove can be
 read before anything is gone. That matters more here than anywhere else in the
 product, because this is the one job whose whole purpose is destroying work.
 
+When email is configured, notice is kept per environment. Each warning
+records which environments it named and when, in ``Workspace.retention_notice``,
+and an environment already past the window is removed only once a warning that
+named it is at least ``RETENTION_WARN_DAYS`` old. An instance removes by
+workspace and age, not by name, so a workspace is left alone for that pass
+whenever anything it would remove has not had that notice yet. The pass that
+sends a warning does not delete: the sweep reads the notice already stored, and
+the warning is recorded afterwards, at the time that message was accepted. That
+covers the first time enforcement is on, a plan, bypass or owner change that
+cleared the notice (see ``app.retention_reset``), a send that failed, and an
+environment that went past the window without being named. In practice the
+first deploy with email holds back every removal for at least
+``RETENTION_WARN_DAYS``. The message says the wait is that many days after the
+notice. A
+scheduled start is when enforcement may begin, not the removal date, and the
+earliest removal is the later of the two. Environments that are only
+approaching the window are named in the email and are not removed. Before
+``RETENTION_STARTS``, and while a start is still further off than the warning
+window, nothing is removed and the existing warning schedule is unchanged.
+Email that is not configured does not hold removal back, so a deployment
+without a relay does not keep data forever.
+
 The instances behind the proxy share one disk, so the sweep has to reach the
 instance that actually holds a workspace. Each one is asked first, in report
 mode, and the one that says it holds it is the one told to remove. When every
@@ -36,6 +58,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import bypass
+from app import email as outbound
 from app.admin.activity import RETIRE_PATH, admin_call, instance_addresses
 from app.config import settings
 from app.database import SessionLocal, engine
@@ -113,8 +136,16 @@ def _holder(answers: list[tuple[str, dict]]) -> str | None:
     return None
 
 
-def sweep_workspace(workspace: Workspace, days, enforce: bool, ask=ask_instance, timeout=None) -> dict:
-    """Report, and optionally remove, one workspace's expired environments."""
+def sweep_workspace(
+    workspace: Workspace, days, enforce: bool, ask=ask_instance, timeout=None, unnoticed=None
+) -> dict:
+    """Report, and optionally remove, one workspace's expired environments.
+
+    ``unnoticed`` maps the expired list to the environments in it that have
+    not had their notice. The instance call removes everything past the window
+    at once, so when that list is not empty nothing is removed this pass and
+    the result names them under ``held``.
+    """
     timeout = settings.RETENTION_TIMEOUT if timeout is None else timeout
     addresses = instance_addresses()
     answers = []
@@ -132,6 +163,11 @@ def sweep_workspace(workspace: Workspace, days, enforce: bool, ask=ask_instance,
         "enforced": bool(enforce),
     }
     if not expired or not enforce:
+        return result
+    held = unnoticed(expired) if unnoticed is not None else []
+    if held:
+        result["held"] = held
+        logger.info("retention: %s held, %d env(s) not warned long enough", workspace.slug, len(held))
         return result
 
     target = _holder(answers)
@@ -154,19 +190,37 @@ def sweep(db: Session, enforce: bool | None = None, ask=ask_instance) -> dict:
 
     The database is read first and its transaction ended before any instance
     is asked, so a sweep that waits on slow instances holds nothing open.
+
+    With email configured, a workspace is only enforced once ``unnoticed``
+    finds every environment it would remove named in a warning old enough.
+    The notice is the one loaded here, so a warning sent later in the same pass
+    cannot authorize this removal.
     """
     enforce = enforcing() if enforce is None else enforce
+    now = utcnow()
     due = []
     for workspace in sweepable(db):
         days = window_for(db, workspace)
         if days:
-            due.append((SimpleNamespace(id=workspace.id, slug=workspace.slug), days))
+            due.append(
+                (
+                    SimpleNamespace(
+                        id=workspace.id,
+                        slug=workspace.slug,
+                        retention_notice=dict(workspace.retention_notice or {}),
+                    ),
+                    days,
+                )
+            )
     db.commit()
 
     summary = {"visited": 0, "with_expired": 0, "removed": 0, "workspaces": []}
     for workspace, days in due:
         summary["visited"] += 1
-        result = sweep_workspace(workspace, days, enforce, ask=ask)
+        notice = workspace.retention_notice
+        result = sweep_workspace(
+            workspace, days, enforce, ask=ask, unnoticed=lambda envs, notice=notice: unnoticed(notice, envs, now)
+        )
         if not result["expired"]:
             continue
         summary["with_expired"] += 1
@@ -200,13 +254,60 @@ def only_sweep(bind=None, key=_SWEEP_LOCK):
                 conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
 
 
-def sweep_once() -> dict | None:
+def _moment(value) -> datetime.datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.datetime.fromisoformat(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=datetime.timezone.utc)
+    return value
+
+
+def unnoticed(notice: dict | None, envs, now: datetime.datetime | None = None) -> list:
+    """The environments in ``envs`` that may not be removed yet for want of notice.
+
+    With email configured, an environment may go only once a warning that named
+    it was sent at least ``RETENTION_WARN_DAYS`` earlier. One with no entry in
+    ``notice`` was never named, or its notice was cleared by a plan, bypass or
+    owner change. Email that is not configured holds nothing back, so
+    enforcement keeps working without a relay.
+    """
+    if not outbound.configured():
+        return []
+    now = now or utcnow()
+    grace = datetime.timedelta(days=max(settings.RETENTION_WARN_DAYS, 1))
+    notice = notice or {}
+    held = []
+    for env in envs:
+        named = _moment(notice.get(env))
+        if named is None or now - named < grace:
+            held.append(env)
+    return held
+
+
+def sweep_once(ask=ask_instance) -> dict | None:
+    """Remove what an earlier warning covered, then warn about the next window.
+
+    Removal runs first and reads the notice already stored, so the message
+    this pass sends cannot authorize deleting in this pass. An overdue
+    environment therefore stays until a warning naming it has had
+    ``RETENTION_WARN_DAYS`` of notice. The warning afterwards is the one the
+    owner reads before a later pass removes that work. With email
+    unconfigured, removal is unchanged and no warning is sent.
+    """
     with only_sweep() as mine:
         if not mine:
             return None
         db = SessionLocal()
         try:
-            return sweep(db)
+            summary = sweep(db, ask=ask)
+            try:
+                warn_owners(db, ask=ask)
+            except Exception:
+                logger.exception("retention: warning owners failed")
+                db.rollback()
+            return summary
         finally:
             db.close()
 
@@ -214,11 +315,14 @@ def sweep_once() -> dict | None:
 _SOONEST = 0.01
 
 
-def expiring(workspace: Workspace, older_than_days: float, ask=ask_instance, timeout=None) -> list | None:
+def expiring(
+    workspace: Workspace, older_than_days: float, ask=ask_instance, timeout=None, complete=False
+) -> list | None:
     """Environments older than the given age, from whichever instances answer.
 
     None when no instance answered, so the console can say it does not know
-    rather than that nothing is going.
+    rather than that nothing is going. With ``complete``, also None when any
+    instance did not answer, for a caller that must not act on a partial list.
     """
     addresses = instance_addresses()
     if not addresses:
@@ -228,7 +332,7 @@ def expiring(workspace: Workspace, older_than_days: float, ask=ask_instance, tim
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(addresses)) as pool:
         answers = list(pool.map(lambda a: ask(a, workspace.id, days, True, timeout), addresses))
     answered = [answer for answer in answers if answer is not None]
-    if not answered:
+    if not answered or (complete and len(answered) < len(answers)):
         return None
     return sorted({eid for answer in answered for eid in answer.get("envs", [])})
 
@@ -269,3 +373,158 @@ def notice(db: Session, workspace: Workspace, ask=ask_instance, today: datetime.
     if workspace.is_active:
         result["expiring"] = expiring(workspace, days - ahead, ask=ask)
     return result
+
+
+def warn_owners(
+    db: Session,
+    ask=ask_instance,
+    now: datetime.datetime | None = None,
+    clock=None,
+) -> int:
+    """Email each owner whose workspace has work about to be removed, and keep notice current.
+
+    The console banner only reaches someone who opens the console. An email
+    goes out when the list of what goes next has an environment no earlier
+    warning named, and at most once per ``RETENTION_WARN_DAYS`` per workspace,
+    so a daily sweep does not repeat it. Environments already named keep the
+    date they were first named. An environment that has left the list, because
+    it was used again or already removed, loses its notice, so it gets a fresh
+    one if it ages out again. While deleting is still scheduled, nobody is
+    emailed until the start day is within ``RETENTION_WARN_DAYS``, so a far-off
+    start does not mean an email every few days until then.
+
+    Only a message the relay took counts as a warning, so with email not set
+    up, or a failed send, the next sweep tries again. The stored time is the
+    handoff for that workspace, not the start of the batch. A failure while
+    building or sending one message is logged and the rest of the batch still
+    runs. Notice is written only if the owner, the plan window, and the notice
+    are still what was read before the send, so a reset during delivery is not
+    overwritten. A workspace is skipped when any instance did not answer, since
+    the list of what goes would be incomplete. As in ``sweep``, the database is
+    read first and the transaction ended before any instance is asked. Returns
+    how many warnings were recorded.
+    """
+    if not outbound.configured() or not settings.RETENTION_ENFORCE:
+        return 0
+    clock = _warning_clock(now, clock)
+    moment = clock()
+    today = moment.date()
+    starts = settings.RETENTION_STARTS
+    if starts is not None and today < starts:
+        ahead = (starts - today).days
+        if ahead > settings.RETENTION_WARN_DAYS:
+            return 0
+        starts_on = starts
+    else:
+        ahead = settings.RETENTION_WARN_DAYS
+        starts_on = None
+    gap = datetime.timedelta(days=max(settings.RETENTION_WARN_DAYS, 1))
+
+    due = []
+    for workspace in sweepable(db):
+        owner = workspace.creator
+        if owner is None or not owner.email:
+            continue
+        days = window_for(db, workspace)
+        if not days:
+            continue
+        due.append(
+            (
+                SimpleNamespace(
+                    id=workspace.id,
+                    name=workspace.name,
+                    created_by=workspace.created_by,
+                    retention_warned_at=workspace.retention_warned_at,
+                    retention_notice=workspace.retention_notice,
+                ),
+                owner.email,
+                days,
+            )
+        )
+    db.commit()
+
+    grace_days = max(settings.RETENTION_WARN_DAYS, 1)
+    sent = 0
+    for workspace, email, days in due:
+        try:
+            envs = expiring(workspace, days - ahead, ask=ask, complete=True)
+            if envs is None:
+                continue
+            notice = dict(workspace.retention_notice or {})
+            kept = {env: when for env, when in notice.items() if env in envs}
+            new = [env for env in envs if env not in kept]
+            last = _moment(workspace.retention_warned_at)
+            if new and (last is None or clock() - last >= gap):
+                delivered = outbound.send_retention_warning_email(
+                    email,
+                    workspace.name,
+                    days,
+                    new,
+                    starts_on,
+                    settings.FRONTEND_URL,
+                    grace_days,
+                    earlier=sorted(kept),
+                )
+                if not delivered:
+                    continue
+                handed = clock()
+                kept.update({env: handed.isoformat() for env in new})
+                if _store_notice(db, workspace, days, kept, handed):
+                    sent += 1
+            elif kept != notice:
+                _store_notice(db, workspace, days, kept, workspace.retention_warned_at)
+        except Exception:
+            logger.exception("retention: warning %s failed", workspace.id)
+            db.rollback()
+    return sent
+
+
+def _warning_clock(now, clock):
+    """The clock for one warning pass.
+
+    ``clock`` is read at the start and again after each accepted send, so a
+    slow batch does not date every message from when the pass began. ``now``
+    is a fixed clock for a test that does not need it to move.
+    """
+    if clock is not None:
+        return clock
+    if now is not None:
+        return lambda: now
+    return utcnow
+
+
+def _same_warning(left, right) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if left.tzinfo is None:
+        left = left.replace(tzinfo=datetime.timezone.utc)
+    if right.tzinfo is None:
+        right = right.replace(tzinfo=datetime.timezone.utc)
+    return left == right
+
+
+def _store_notice(db: Session, workspace, days: int, notice: dict, warned_at) -> bool:
+    """Store ``notice`` and ``warned_at`` unless the row no longer matches what was read.
+
+    The owner, the plan window, the last warning time and the notice are the
+    ones read before the relay was called. A transfer or a plan change commits
+    its own reset while the send is in flight; writing over that reset would
+    treat the old message as notice for the new situation.
+    """
+    row = db.query(Workspace).filter(Workspace.id == workspace.id).with_for_update().one_or_none()
+    if (
+        row is None
+        or row.created_by != workspace.created_by
+        or not _same_warning(row.retention_warned_at, workspace.retention_warned_at)
+        or (row.retention_notice or {}) != (workspace.retention_notice or {})
+        or window_for(db, row) != days
+    ):
+        # End the lock without writing. Rollback would also undo a reset that
+        # was committed on this same session, which is how the tests, and a
+        # request sharing the gateway session, observe it.
+        db.commit()
+        return False
+    row.retention_warned_at = warned_at
+    row.retention_notice = notice or None
+    db.commit()
+    return True

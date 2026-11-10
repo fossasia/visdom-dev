@@ -106,6 +106,41 @@ def test_switching_the_bypass_off_keeps_what_was_made_and_refuses_more(
     assert len(client.get(WORKSPACES, headers=owner["headers"]).json()) == 2
 
 
+def _warned_workspace(client, owner, db_session):
+    from app.models import utcnow
+
+    made = _workspace(client, owner)
+    assert made.status_code == 201
+    workspace = db_session.get(Workspace, uuid.UUID(made.json()["id"]))
+    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=30)
+    db_session.commit()
+    return workspace.id
+
+
+def test_ending_an_account_bypass_waits_for_a_fresh_retention_warning(client, make_user, db_session):
+    owner = make_user()
+    workspace_id = _warned_workspace(client, owner, db_session)
+    _bypass(db_session, owner)
+    assert db_session.get(Workspace, workspace_id).retention_warned_at is not None
+
+    _bypass(db_session, owner, on=False)
+
+    db_session.expire_all()
+    assert db_session.get(Workspace, workspace_id).retention_warned_at is None
+
+
+def test_ending_the_bypass_for_everyone_waits_for_a_fresh_retention_warning(client, make_user, db_session):
+    owner = make_user()
+    workspace_id = _warned_workspace(client, owner, db_session)
+    bypass.set_for_everyone(db_session, True)
+    assert db_session.get(Workspace, workspace_id).retention_warned_at is not None
+
+    bypass.set_for_everyone(db_session, False)
+
+    db_session.expire_all()
+    assert db_session.get(Workspace, workspace_id).retention_warned_at is None
+
+
 def test_a_bypass_never_changes_the_plan(client, make_user, db_session):
     owner = make_user()
     _bypass(db_session, owner)
