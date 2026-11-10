@@ -118,6 +118,52 @@ def test_a_fresh_invite_can_still_be_accepted(client, db_session, make_user, mak
     assert accepted.json()["status"] == "active"
 
 
+def test_expired_invites_stop_holding_seats_before_the_sweep(client, db_session, make_user, make_workspace, expiry):
+    from app.models import Plan, User
+    from app.usage import invites_waiting, invites_waiting_in
+
+    owner = make_user()
+    workspace = make_workspace(owner)
+    db_session.add(
+        Plan(id="three", name="Three", price=5, sort_order=9, is_public=True,
+             limits={"workspaces": 5, "members": 3, "api_keys": 2}, features=[])
+    )
+    db_session.get(User, uuid.UUID(owner["id"])).tier = "three"
+    db_session.commit()
+    registered = make_user()
+    _invite(client, owner, workspace, registered["email"])
+    _invite(client, owner, workspace, "first@example.com")
+    _invite(client, owner, workspace, "second@example.com")
+    account = db_session.get(User, uuid.UUID(owner["id"]))
+    assert invites_waiting(db_session, account) == 3
+    assert invites_waiting_in(db_session, uuid.UUID(workspace["id"])) == 3
+
+    full = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": "fourth@example.com", "role": "member"},
+        headers=owner["headers"],
+    )
+    assert full.status_code == 402, full.text
+
+    _age(db_session, 31)
+    assert invites_waiting(db_session, account) == 0
+    assert invites_waiting_in(db_session, uuid.UUID(workspace["id"])) == 0
+    _invite(client, owner, workspace, "fourth@example.com")
+
+
+def test_invites_with_no_send_time_still_hold_a_seat(client, db_session, make_user, make_workspace, expiry):
+    from app.models import User
+    from app.usage import invites_waiting
+
+    owner = make_user()
+    workspace = make_workspace(owner)
+    _invite(client, owner, workspace, "legacy@example.com")
+    db_session.query(WorkspaceInvite).update({WorkspaceInvite.created_at: None})
+    db_session.commit()
+
+    assert invites_waiting(db_session, db_session.get(User, uuid.UUID(owner["id"]))) == 1
+
+
 def test_registering_does_not_revive_an_expired_email_invite(client, db_session, make_user, make_workspace, expiry):
     owner = make_user()
     workspace = make_workspace(owner)
@@ -269,11 +315,7 @@ def test_expiry_sweeps_have_supporting_indexes():
 
 
 def test_invite_expiry_migrations_stay_one_line():
-    """This branch has one Alembic head, the index revision after invite expiry.
-
-    The retention branch adds a different child of ``a3e8d5c7b214``. That
-    sibling is not in this tree; merging both later needs a merge revision.
-    """
+    """Invite expiry is one revision on top of ``a3e8d5c7b214``, and the chain has one head."""
     from pathlib import Path
 
     from alembic.config import Config
@@ -281,12 +323,11 @@ def test_invite_expiry_migrations_stay_one_line():
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
-    heads = script.get_heads()
-    assert heads == ["e1b6c4d82a57"]
-    assert script.get_revision(heads[0]).down_revision == "c4d8a1e6f925"
+    assert len(script.get_heads()) == 1
+    assert script.get_revision("c4d8a1e6f925").down_revision == "a3e8d5c7b214"
 
 
-def test_the_index_migration_creates_and_drops_the_sweep_indexes(tmp_path):
+def test_the_invite_expiry_migration_creates_and_drops_the_sweep_indexes(tmp_path):
     import importlib.util
     from pathlib import Path
 
@@ -296,8 +337,8 @@ def test_the_index_migration_creates_and_drops_the_sweep_indexes(tmp_path):
 
     from app.database import Base
 
-    path = Path(__file__).resolve().parents[1] / "alembic/versions/e1b6c4d82a57_invite_expiry_indexes.py"
-    spec = importlib.util.spec_from_file_location("invite_expiry_indexes", path)
+    path = Path(__file__).resolve().parents[1] / "alembic/versions/c4d8a1e6f925_invite_expiry.py"
+    spec = importlib.util.spec_from_file_location("invite_expiry", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     engine = create_engine(f"sqlite:///{tmp_path}/indexes.db")
@@ -306,6 +347,7 @@ def test_the_index_migration_creates_and_drops_the_sweep_indexes(tmp_path):
         with engine.begin() as connection:
             connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workspace_invites_created_at")
             connection.exec_driver_sql("DROP INDEX IF EXISTS ix_memberships_status_invited_at")
+            connection.exec_driver_sql("ALTER TABLE memberships DROP COLUMN invited_at")
             context = MigrationContext.configure(connection)
             with Operations.context(context):
                 migration.upgrade()
@@ -323,6 +365,7 @@ def test_the_index_migration_creates_and_drops_the_sweep_indexes(tmp_path):
             }
             assert "ix_workspace_invites_created_at" not in invite_names
             assert ("status", "invited_at") not in membership_columns
+            assert "invited_at" not in {column["name"] for column in inspect(connection).get_columns("memberships")}
     finally:
         engine.dispose()
 
