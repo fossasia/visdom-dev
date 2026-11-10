@@ -9,7 +9,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import account_deletion, payments, retention, usage_rollup
+from app import account_deletion, invites, payments, retention, usage_rollup
 from app.admin import mount_admin
 from app.admin.activity import activity_per_instance
 from app.config import settings
@@ -17,6 +17,7 @@ from app.database import SessionLocal
 from app.routers import api_keys, auth, billing, health, usage, visdom, workspaces
 
 FIRST_TICK_SECONDS = 300
+INVITE_SWEEP_HOURS = 6
 
 
 async def _sample_usage_forever(seconds: int) -> None:
@@ -85,8 +86,24 @@ async def _delete_accounts_forever(hours: int) -> None:
             logging.exception("account deletion tick failed")
 
 
+async def _expire_invites_forever(hours: int) -> None:
+    """Remove invites nobody answered, on its own tick so it runs even with
+    account deletion turned off."""
+    delay = FIRST_TICK_SECONDS
+    while True:
+        await asyncio.sleep(delay)
+        delay = hours * 3600
+        try:
+            expired = await asyncio.to_thread(invites.expire_once)
+            if expired:
+                logging.info("removed %d invite(s) nobody answered", expired)
+        except Exception:
+            logging.exception("invite expiry tick failed")
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """Start the background ticks that are switched on, and cancel them on shutdown."""
     seconds = settings.USAGE_SAMPLE_SECONDS
     hours = settings.RETENTION_SWEEP_HOURS
     tasks = []
@@ -99,6 +116,8 @@ async def lifespan(_app: FastAPI):
         tasks.append(asyncio.create_task(_sweep_retention_forever(hours)))
     if settings.ACCOUNT_DELETION_HOURS > 0:
         tasks.append(asyncio.create_task(_delete_accounts_forever(settings.ACCOUNT_DELETION_HOURS)))
+    if settings.INVITE_EXPIRY_DAYS > 0:
+        tasks.append(asyncio.create_task(_expire_invites_forever(INVITE_SWEEP_HOURS)))
     try:
         yield
     finally:

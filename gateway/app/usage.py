@@ -14,10 +14,10 @@ number someone is shown and the number they are held to are the same one.
 import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from app import bypass
+from app import bypass, invites
 from app.billing import LIMIT_KEYS, get_plan
 from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite, WorkspaceUsageHour, utcnow
 
@@ -48,39 +48,47 @@ def members_used(db: Session, user: User) -> int:
     )
 
 
+def _unexpired(query, sent_at):
+    """Keep only invites still inside ``INVITE_EXPIRY_DAYS``.
+
+    The sweep runs every few hours, so an invite past the cutoff can still be
+    in the table. It is already refused on accept, so it must not hold a seat
+    either. A row with no send time never expires, same as ``invites.is_expired``.
+    """
+    before = invites.cutoff()
+    if before is None:
+        return query
+    return query.filter(or_(sent_at.is_(None), sent_at >= before))
+
+
+def _unanswered(db: Session, *criteria) -> int:
+    query = db.query(Membership).filter(Membership.status == "pending_acceptance", *criteria)
+    return _unexpired(query, Membership.invited_at).count()
+
+
+def _unregistered(db: Session, *criteria) -> int:
+    return _unexpired(db.query(WorkspaceInvite).filter(*criteria), WorkspaceInvite.created_at).count()
+
+
 def invites_waiting(db: Session, user: User) -> int:
     """Invites sent and not yet answered, across the workspaces the account owns.
 
     Both kinds: someone with an account who has not accepted, and an address
-    with no account yet. Each one is a seat promised to somebody.
+    with no account yet. Each one is a seat promised to somebody. Expired ones
+    the sweep has not reached yet are not counted.
     """
     owned = owned_workspace_ids(db, user)
     if not owned:
         return 0
-    unanswered = (
-        db.query(Membership)
-        .filter(
-            Membership.workspace_id.in_(owned),
-            Membership.user_id != user.id,
-            Membership.status == "pending_acceptance",
-        )
-        .count()
-    )
-    unregistered = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id.in_(owned)).count()
+    unanswered = _unanswered(db, Membership.workspace_id.in_(owned), Membership.user_id != user.id)
+    unregistered = _unregistered(db, WorkspaceInvite.workspace_id.in_(owned))
     return unanswered + unregistered
 
 
 def invites_waiting_in(db: Session, workspace_id) -> int:
-    """Invites sent and not yet answered in one workspace."""
-    unanswered = (
-        db.query(Membership)
-        .filter(
-            Membership.workspace_id == workspace_id,
-            Membership.status == "pending_acceptance",
-        )
-        .count()
-    )
-    unregistered = db.query(WorkspaceInvite).filter(WorkspaceInvite.workspace_id == workspace_id).count()
+    """Invites sent and not yet answered in one workspace, leaving out expired ones."""
+    unanswered = _unanswered(db, Membership.workspace_id == workspace_id)
+    unregistered = _unregistered(db, WorkspaceInvite.workspace_id == workspace_id)
     return unanswered + unregistered
 
 

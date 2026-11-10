@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app import account_deletion, password_reset, payments
+from app import account_deletion, invites, password_reset, payments
 from app import email as outbound
 from app.admin.activity import evict_workspace
 from app.config import settings
@@ -64,6 +64,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    """Create an account and turn its unexpired email invites into pending memberships."""
     email = user_in.email.strip().lower()
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
@@ -91,12 +92,16 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
     pending_invites = db.query(WorkspaceInvite).filter(WorkspaceInvite.email == new_user.email).all()
     for invite in pending_invites:
+        if invites.is_expired(invite.created_at):
+            db.delete(invite)
+            continue
         db.add(
             Membership(
                 user_id=new_user.id,
                 workspace_id=invite.workspace_id,
                 role=invite.role,
                 status="pending_acceptance",
+                invited_at=invite.created_at,
             )
         )
         db.delete(invite)
