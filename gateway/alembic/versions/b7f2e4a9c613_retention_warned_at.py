@@ -1,7 +1,7 @@
 """retention warned at
 
 Revision ID: b7f2e4a9c613
-Revises: a3e8d5c7b214
+Revises: c4d8a1e6f925
 Create Date: 2026-11-02
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'b7f2e4a9c613'
-down_revision: Union[str, Sequence[str], None] = 'a3e8d5c7b214'
+down_revision: Union[str, Sequence[str], None] = 'c4d8a1e6f925'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
