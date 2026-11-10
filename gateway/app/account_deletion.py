@@ -211,7 +211,6 @@ def remove(db: Session, user: User, reason: str, staff_id=None, staff_email=None
         workspace.created_by = (
             _heir(db, workspace.id, user.id) if workspace.trashed_at is None else None
         )
-        workspace.retention_warned_at = None
     db.query(WorkspaceInvite).filter(WorkspaceInvite.invited_by == user.id).update(
         {WorkspaceInvite.invited_by: None}, synchronize_session=False
     )

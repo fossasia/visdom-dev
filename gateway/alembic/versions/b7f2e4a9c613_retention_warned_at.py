@@ -23,8 +23,11 @@ def upgrade() -> None:
         'workspaces',
         sa.Column('retention_warned_at', sa.DateTime(timezone=True), nullable=True),
     )
+    # Which environments a warning named, and when: removal is per environment.
+    op.add_column('workspaces', sa.Column('retention_notice', sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    op.drop_column('workspaces', 'retention_notice')
     op.drop_column('workspaces', 'retention_warned_at')

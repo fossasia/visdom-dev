@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app import bypass, payments, retention
+from app import bypass, payments
 from app.billing import DEFAULT_TIER, get_plan, ordered_plans, selectable
 from app.config import settings
 from app.dependencies import get_current_user, get_db
@@ -133,8 +133,6 @@ def update_subscription(
             status_code=409,
             detail="You have a paid plan. Cancel it from Manage billing to move to a free plan.",
         )
-    if current_user.tier != payload.tier:
-        retention.forget_warnings(db, current_user)
     current_user.tier = payload.tier
     db.commit()
     db.refresh(current_user)

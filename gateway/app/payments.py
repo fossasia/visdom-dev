@@ -279,16 +279,6 @@ def _write(db: Session, subscription_id: str, user: User, fields: dict) -> Subsc
 
 
 def settle_tier(db: Session, user: User) -> None:
-    before = user.tier
-    _settle(db, user)
-    if user.tier != before:
-        # Imported here: retention reaches the database engine at import time.
-        from app import retention
-
-        retention.forget_warnings(db, user)
-
-
-def _settle(db: Session, user: User) -> None:
     live = (
         db.query(Subscription)
         .filter(

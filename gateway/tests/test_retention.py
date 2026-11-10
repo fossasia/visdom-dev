@@ -324,8 +324,24 @@ def test_an_owner_is_warned_once_per_window(db_session, instances, rules, mailbo
     retention.warn_owners(db_session, ask=ask, now=NOW + datetime.timedelta(days=1))
     assert len(mailbox) == 1
 
-    retention.warn_owners(db_session, ask=ask, now=NOW + datetime.timedelta(days=3))
+    more = Recorder(envs=["january", "february"])
+    retention.warn_owners(db_session, ask=more, now=NOW + datetime.timedelta(days=1))
+    assert len(mailbox) == 1
+
+    retention.warn_owners(db_session, ask=more, now=NOW + datetime.timedelta(days=3))
     assert len(mailbox) == 2
+    new, earlier = mailbox[1][1].split("named in an earlier notice")
+    assert "february" in new and "january" not in new
+    assert "january" in earlier
+
+
+def test_nothing_new_to_name_sends_no_email(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    _workspace(db_session, _owner(db_session, "free"))
+
+    retention.warn_owners(db_session, ask=Recorder(), now=NOW)
+    retention.warn_owners(db_session, ask=Recorder(), now=NOW + datetime.timedelta(days=10))
+    assert len(mailbox) == 1
 
 
 def test_nobody_is_emailed_when_nothing_is_going(db_session, instances, rules, mailbox):
@@ -406,10 +422,13 @@ def test_a_plan_change_lets_the_owner_be_warned_again(db_session, instances, rul
     workspace = _workspace(db_session, owner)
 
     assert retention.warn_owners(db_session, ask=Recorder(), now=NOW) == 1
-    retention.forget_warnings(db_session, owner)
+    db_session.refresh(workspace)
+    assert workspace.retention_notice == {"january": NOW.isoformat()}
+    owner.tier = "pro"
     db_session.commit()
     db_session.refresh(workspace)
     assert workspace.retention_warned_at is None
+    assert workspace.retention_notice is None
 
     later = NOW + datetime.timedelta(hours=1)
     assert retention.warn_owners(db_session, ask=Recorder(), now=later) == 1
@@ -488,6 +507,14 @@ class ByAge:
         }
 
 
+def _noticed(db_session, workspace, days_ago, envs):
+    """Record a warning that named ``envs`` this many days ago."""
+    when = utcnow() - datetime.timedelta(days=days_ago)
+    workspace.retention_warned_at = when
+    workspace.retention_notice = {env: when.isoformat() for env in envs}
+    db_session.commit()
+
+
 def _bind_once(monkeypatch, db_session):
     """Run ``sweep_once`` against this test session instead of a new one."""
     monkeypatch.setattr(retention, "SessionLocal", lambda: db_session)
@@ -556,8 +583,7 @@ def test_overdue_environments_go_once_the_warning_is_a_full_window_old(
     rules(enforce=True, warn=3)
     _bind_once(monkeypatch, db_session)
     workspace = _workspace(db_session, _owner(db_session, "free"), slug="aged-warning")
-    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=3)
-    db_session.commit()
+    _noticed(db_session, workspace, days_ago=3, envs=["overdue-run"])
     ask = ByAge()
 
     summary = retention.sweep_once(ask=ask)
@@ -590,9 +616,9 @@ def test_clearing_the_warning_holds_the_next_deletion(db_session, instances, rul
     _bind_once(monkeypatch, db_session)
     owner = _owner(db_session, "free")
     workspace = _workspace(db_session, owner, slug="plan-changed")
-    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=10)
-    db_session.commit()
-    retention.forget_warnings(db_session, owner)
+    _noticed(db_session, workspace, days_ago=10, envs=["overdue-run"])
+    other = _owner(db_session, "free")
+    workspace.created_by = other.id
     db_session.commit()
     ask = ByAge()
 
@@ -636,7 +662,7 @@ def test_a_partial_answer_does_not_warn_or_remove(db_session, instances, rules, 
 
 
 def test_a_scheduled_start_warns_ahead_and_does_not_delete_yet(db_session, instances, rules, mailbox, monkeypatch):
-    starts = datetime.date.today() + datetime.timedelta(days=2)
+    starts = utcnow().date() + datetime.timedelta(days=2)
     rules(enforce=True, starts=starts, warn=3)
     _bind_once(monkeypatch, db_session)
     _workspace(db_session, _owner(db_session, "free"), slug="scheduled")
@@ -653,7 +679,7 @@ def test_a_scheduled_start_warns_ahead_and_does_not_delete_yet(db_session, insta
 def test_the_first_pass_on_the_start_date_warns_instead_of_deleting(
     db_session, instances, rules, mailbox, monkeypatch
 ):
-    rules(enforce=True, starts=datetime.date.today(), warn=3)
+    rules(enforce=True, starts=utcnow().date(), warn=3)
     _bind_once(monkeypatch, db_session)
     _workspace(db_session, _owner(db_session, "free"), slug="starts-today")
     ask = ByAge()
@@ -668,11 +694,10 @@ def test_the_first_pass_on_the_start_date_warns_instead_of_deleting(
 def test_a_warning_aged_before_the_start_allows_deletion_when_it_arrives(
     db_session, instances, rules, mailbox, monkeypatch
 ):
-    rules(enforce=True, starts=datetime.date.today(), warn=3)
+    rules(enforce=True, starts=utcnow().date(), warn=3)
     _bind_once(monkeypatch, db_session)
     workspace = _workspace(db_session, _owner(db_session, "free"), slug="start-aged")
-    workspace.retention_warned_at = utcnow() - datetime.timedelta(days=3)
-    db_session.commit()
+    _noticed(db_session, workspace, days_ago=3, envs=["overdue-run"])
     ask = ByAge()
 
     summary = retention.sweep_once(ask=ask)
@@ -770,6 +795,88 @@ def test_a_reset_during_delivery_is_not_replaced_by_the_old_warning(db_session, 
     assert workspace.retention_warned_at is None
 
 
+def test_an_environment_no_warning_named_holds_the_whole_workspace(
+    db_session, instances, rules, mailbox, monkeypatch
+):
+    """A named environment past its grace does not let an unnamed one go with it.
+
+    The instance removes everything past the window at once, so the workspace
+    waits until the unnamed one has had its own notice.
+    """
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="unnamed")
+    _noticed(db_session, workspace, days_ago=10, envs=["overdue-run"])
+    ask = ByAge(overdue=["overdue-run", "never-named"])
+
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert summary["workspaces"][0]["held"] == ["never-named"]
+    new, earlier = mailbox[0][1].split("named in an earlier notice")
+    assert "never-named" in new and "overdue-run" not in new
+    assert "overdue-run" in earlier
+    db_session.refresh(workspace)
+    assert set(workspace.retention_notice) == {"overdue-run", "never-named", "soon-run"}
+    old = datetime.datetime.fromisoformat(workspace.retention_notice["overdue-run"])
+    assert utcnow() - _aware(old) >= datetime.timedelta(days=10)
+
+
+def test_a_skipped_warning_does_not_authorize_what_it_would_have_named(
+    db_session, instances, rules, mailbox, monkeypatch
+):
+    """The case from review: a later warning is skipped because an instance is silent."""
+    rules(enforce=True, warn=3)
+    _bind_once(monkeypatch, db_session)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="skipped")
+    _noticed(db_session, workspace, days_ago=10, envs=["overdue-run"])
+
+    retention.sweep_once(ask=ByAge(overdue=["overdue-run", "late-run"], silent="visdom-2:8097"))
+    assert mailbox == []
+    ask = ByAge(overdue=["overdue-run", "late-run"])
+    summary = retention.sweep_once(ask=ask)
+
+    assert summary["removed"] == 0
+    assert _removed(ask) == []
+    assert summary["workspaces"][0]["held"] == ["late-run"]
+
+
+def test_an_environment_used_again_loses_its_notice(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="used-again")
+    _noticed(db_session, workspace, days_ago=1, envs=["january", "touched"])
+
+    assert retention.warn_owners(db_session, ask=Recorder(envs=["january"]), now=utcnow()) == 0
+    assert mailbox == []
+    db_session.refresh(workspace)
+    assert set(workspace.retention_notice) == {"january"}
+
+
+def test_an_empty_list_clears_all_notice(db_session, instances, rules, mailbox):
+    rules(enforce=True, warn=3)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="all-saved")
+    _noticed(db_session, workspace, days_ago=1, envs=["january"])
+
+    retention.warn_owners(db_session, ask=Recorder(envs=[]), now=utcnow())
+    db_session.refresh(workspace)
+    assert workspace.retention_notice is None
+    assert workspace.retention_warned_at is not None
+
+
+def test_unnoticed_lists_what_lacks_a_full_notice(monkeypatch, rules):
+    rules(enforce=True, warn=3)
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    old = (NOW - datetime.timedelta(days=3)).isoformat()
+    young = (NOW - datetime.timedelta(days=2)).isoformat()
+    notice = {"old": old, "young": young}
+
+    assert retention.unnoticed(notice, ["old", "young", "missing"], NOW) == ["young", "missing"]
+    assert retention.unnoticed(None, ["old"], NOW) == ["old"]
+    monkeypatch.setattr(retention.outbound, "configured", lambda: False)
+    assert retention.unnoticed(None, ["old"], NOW) == []
+
+
 def test_a_plan_change_during_delivery_is_not_stamped_as_already_warned(
     db_session, instances, rules, monkeypatch
 ):
@@ -779,7 +886,6 @@ def test_a_plan_change_during_delivery_is_not_stamped_as_already_warned(
 
     def deliver(to, subject, body):
         owner.tier = "enterprise"
-        retention.forget_warnings(db_session, owner)
         db_session.commit()
         return True
 
