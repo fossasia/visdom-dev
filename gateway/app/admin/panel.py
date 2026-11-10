@@ -304,10 +304,6 @@ class UserAdmin(ChangeableView, model=User):
         if chosen:
             data["password_hash"] = get_password_hash(chosen)
             model.token_version = (model.token_version or 0) + 1
-        if not is_created and model.bypass_limits and "bypass_limits" in data and not data["bypass_limits"]:
-            same = object_session(model)
-            if same is not None:
-                bypass.forget_warnings(same, model)
         tier = data.get("tier")
         if tier is None or tier == model.tier:
             return
@@ -321,13 +317,6 @@ class UserAdmin(ChangeableView, model=User):
                 status_code=400,
                 detail=f"{tier} is archived or does not exist, so no account can be put on it.",
             )
-        # Same session as the tier write, so a rejected save does not clear the
-        # warning and a committed shorter plan cannot keep the old notice.
-        same = object_session(model)
-        if not is_created and same is not None:
-            from app import retention
-
-            retention.forget_warnings(same, model)
 
 
 def _email_of(user):

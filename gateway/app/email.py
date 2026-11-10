@@ -115,6 +115,7 @@ def send_retention_warning_email(
     starts_on,
     url: str,
     warn_days: int,
+    earlier=(),
 ) -> bool:
     """Send now, from the sweep's own thread, so the caller knows it went out.
 
@@ -122,7 +123,9 @@ def send_retention_warning_email(
     deleted. Removal waits at least ``warn_days`` after this message, and also
     until ``starts_on`` when that day is still ahead. The subject is one line,
     because a workspace name with a line break would otherwise be an illegal
-    header and the send would raise.
+    header and the send would raise. ``envs`` are the environments this
+    message is the first notice for. ``earlier`` were named in an earlier
+    message, still go, and keep that message's date.
     """
     names = "\n".join(f"  - {env}" for env in envs)
     unit = "day" if warn_days == 1 else "days"
@@ -134,6 +137,12 @@ def send_retention_warning_email(
         )
     else:
         schedule = grace
+    if earlier:
+        listed = "\n".join(f"  - {env}" for env in earlier)
+        schedule += (
+            f"\n\nThese were named in an earlier notice and can be removed on that notice's "
+            f"schedule:\n\n{listed}"
+        )
     return send(
         to_email,
         f"Old environments in {_one_line(workspace_name)} will be removed after notice",
