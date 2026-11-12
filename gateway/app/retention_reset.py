@@ -48,6 +48,7 @@ def _change(obj, attr):
 
 
 def _turned_off(obj, attr) -> bool:
+    """True when a pending write switches ``attr`` from on (or unknown) to off."""
     change = _change(obj, attr)
     if change is None:
         return False
@@ -65,6 +66,7 @@ def clear(workspace: Workspace) -> None:
 
 @event.listens_for(Session, "before_flush")
 def _drop_stale_notice(session, _flush_context, _instances) -> None:
+    """Clear retention notice on workspaces whose plan, bypass or owner changes in this flush."""
     owners = set()
     everyone = False
     for obj in list(session.dirty):

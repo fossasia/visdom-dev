@@ -255,6 +255,7 @@ def only_sweep(bind=None, key=_SWEEP_LOCK):
 
 
 def _moment(value) -> datetime.datetime | None:
+    """``value`` as an aware datetime, reading ISO strings and taking naive ones as UTC."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -494,6 +495,7 @@ def _warning_clock(now, clock):
 
 
 def _same_warning(left, right) -> bool:
+    """True when both warning times are missing or name the same moment, naive read as UTC."""
     if left is None or right is None:
         return left is None and right is None
     if left.tzinfo is None:
