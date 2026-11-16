@@ -166,6 +166,43 @@ def test_a_dormant_looking_workspace_waits_when_an_instance_is_silent(db_session
     assert all(dry_run for _address, dry_run in asked)
 
 
+def test_a_plan_change_during_the_sweep_stops_the_removal(db_session, instances):
+    owner = _owner(db_session, "free")
+    _workspace(db_session, owner, slug="upgraded")
+    asked = Recorder(loaded_at="visdom-2:8097")
+
+    def upgrade_then_answer(address, workspace_id, days, dry_run, timeout):
+        if not asked.calls:
+            owner.tier = "pro"
+            db_session.commit()
+        return asked(address, workspace_id, days, dry_run, timeout)
+
+    summary = retention.sweep(db_session, enforce=True, ask=upgrade_then_answer)
+
+    removals = [call for call in asked.calls if not call["dry_run"]]
+    assert removals == []
+    assert summary["removed"] == 0
+
+
+def test_an_ownership_transfer_during_the_sweep_stops_the_removal(db_session, instances):
+    owner = _owner(db_session, "free")
+    heir = _owner(db_session, "free")
+    workspace = _workspace(db_session, owner, slug="handed-over")
+    asked = Recorder(loaded_at="visdom-2:8097")
+
+    def transfer_then_answer(address, workspace_id, days, dry_run, timeout):
+        if not asked.calls:
+            workspace.created_by = heir.id
+            db_session.commit()
+        return asked(address, workspace_id, days, dry_run, timeout)
+
+    summary = retention.sweep(db_session, enforce=True, ask=transfer_then_answer)
+
+    removals = [call for call in asked.calls if not call["dry_run"]]
+    assert removals == []
+    assert summary["removed"] == 0
+
+
 @pytest.fixture
 def rules(monkeypatch):
     def _set(enforce=False, starts=None, warn=3):

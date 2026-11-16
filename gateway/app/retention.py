@@ -93,6 +93,18 @@ def sweepable(db: Session) -> list[Workspace]:
     )
 
 
+def unchanged(db: Session, workspace, days) -> bool:
+    """Whether the workspace still has the owner and window it was read with.
+
+    The row is locked while it is read, so an ownership transfer, which locks
+    the same row, cannot land between this check and the removal that follows.
+    """
+    current = db.query(Workspace).filter(Workspace.id == workspace.id).with_for_update().first()
+    if current is None or current.created_by != workspace.created_by:
+        return False
+    return window_for(db, current) == days
+
+
 def ask_instance(address: str, workspace_id, days, dry_run: bool, timeout: float) -> dict | None:
     """One instance's answer about one workspace, or None if it did not give one."""
     body = json.dumps(
@@ -113,7 +125,7 @@ def _holder(answers: list[tuple[str, dict]]) -> str | None:
     return None
 
 
-def sweep_workspace(workspace: Workspace, days, enforce: bool, ask=ask_instance, timeout=None) -> dict:
+def sweep_workspace(workspace: Workspace, days, enforce: bool, ask=ask_instance, timeout=None, db=None) -> dict:
     """Report, and optionally remove, one workspace's expired environments."""
     timeout = settings.RETENTION_TIMEOUT if timeout is None else timeout
     addresses = instance_addresses()
@@ -140,7 +152,15 @@ def sweep_workspace(workspace: Workspace, days, enforce: bool, ask=ask_instance,
     if target is None:
         logger.warning("retention: %s skipped, an instance did not answer", workspace.slug)
         return result
-    done = ask(target, workspace.id, days, False, timeout)
+    if db is not None and not unchanged(db, workspace, days):
+        db.commit()
+        logger.info("retention: %s skipped, its owner or plan changed during the sweep", workspace.slug)
+        return result
+    try:
+        done = ask(target, workspace.id, days, False, timeout)
+    finally:
+        if db is not None:
+            db.commit()
     result["removed"] = (done or {}).get("removed", 0)
     return result
 
@@ -160,13 +180,13 @@ def sweep(db: Session, enforce: bool | None = None, ask=ask_instance) -> dict:
     for workspace in sweepable(db):
         days = window_for(db, workspace)
         if days:
-            due.append((SimpleNamespace(id=workspace.id, slug=workspace.slug), days))
+            due.append((SimpleNamespace(id=workspace.id, slug=workspace.slug, created_by=workspace.created_by), days))
     db.commit()
 
     summary = {"visited": 0, "with_expired": 0, "removed": 0, "workspaces": []}
     for workspace, days in due:
         summary["visited"] += 1
-        result = sweep_workspace(workspace, days, enforce, ask=ask)
+        result = sweep_workspace(workspace, days, enforce, ask=ask, db=db)
         if not result["expired"]:
             continue
         summary["with_expired"] += 1
