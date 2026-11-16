@@ -11,6 +11,7 @@ import { formatJoined, formatLastSignIn, planName } from '../utils/profileDetail
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
 const MIN_PASSWORD = 6;
+const USERNAME_AVAILABILITY_TIMEOUT_MS = 5000;
 
 const ProfileModal = ({ onClose }) => {
   const { user, setUser, setAccessToken } = useAuth();
@@ -37,8 +38,10 @@ const ProfileModal = ({ onClose }) => {
     if (!uname || !USERNAME_PATTERN.test(uname) || isUnchanged) return;
     setCheckingUsername(true);
     setUsernameCheckError(false);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
     try {
-      const response = await api.get('/auth/username-availability', { params: { username: uname } });
+      const response = await api.get('/auth/username-availability', { params: { username: uname }, signal: controller.signal });
       if (usernameRef.current !== uname) return;
       setUsernameAvailable(response.data.available);
       setUsernameCheckError(false);
@@ -47,6 +50,7 @@ const ProfileModal = ({ onClose }) => {
       setUsernameAvailable(null);
       setUsernameCheckError(true);
     } finally {
+      clearTimeout(timer);
       if (usernameRef.current === uname) {
         setCheckingUsername(false);
       }
@@ -72,8 +76,10 @@ const ProfileModal = ({ onClose }) => {
     setCheckingUsername(true);
     setUsernameCheckError(false);
     const timeout = setTimeout(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
       try {
-        const response = await api.get('/auth/username-availability', { params: { username } });
+        const response = await api.get('/auth/username-availability', { params: { username }, signal: controller.signal });
         if (usernameRef.current !== username) return;
         setUsernameAvailable(response.data.available);
         setUsernameCheckError(false);
@@ -82,6 +88,7 @@ const ProfileModal = ({ onClose }) => {
         setUsernameAvailable(null);
         setUsernameCheckError(true);
       } finally {
+        clearTimeout(timer);
         if (usernameRef.current === username) {
           setCheckingUsername(false);
         }

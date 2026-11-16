@@ -7,6 +7,7 @@ import PasswordInput from '../components/PasswordInput';
 import { resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
+const USERNAME_AVAILABILITY_TIMEOUT_MS = 5000;
 
 const Register = () => {
   const [email, setEmail] = useState('');
@@ -53,8 +54,10 @@ fetchSuggestion();
     if (!uname || !USERNAME_PATTERN.test(uname)) return;
     setCheckingUsername(true);
     setUsernameCheckError(false);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
     try {
-      const response = await api.get('/auth/username-availability', { params: { username: uname } });
+      const response = await api.get('/auth/username-availability', { params: { username: uname }, signal: controller.signal });
       if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== uname) return;
       setUsernameAvailable(response.data.available);
       setUsernameCheckError(false);
@@ -63,6 +66,7 @@ fetchSuggestion();
       setUsernameAvailable(null);
       setUsernameCheckError(true);
     } finally {
+      clearTimeout(timer);
       if (usernameModeRef.current === 'custom' && customUsernameRef.current === uname) {
         setCheckingUsername(false);
       }
@@ -89,8 +93,10 @@ fetchSuggestion();
     setCheckingUsername(true);
     setUsernameCheckError(false);
     const timeout = setTimeout(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
       try {
-        const response = await api.get('/auth/username-availability', { params: { username: customUsername } });
+        const response = await api.get('/auth/username-availability', { params: { username: customUsername }, signal: controller.signal });
         if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== customUsername) return;
         setUsernameAvailable(response.data.available);
         setUsernameCheckError(false);
@@ -99,6 +105,7 @@ fetchSuggestion();
         setUsernameAvailable(null);
         setUsernameCheckError(true);
       } finally {
+        clearTimeout(timer);
         if (usernameModeRef.current === 'custom' && customUsernameRef.current === customUsername) {
           setCheckingUsername(false);
         }
