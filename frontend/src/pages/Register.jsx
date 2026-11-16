@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Check, RefreshCw, X } from 'lucide-react';
 import { useAuth, api } from '../context/AuthContext';
@@ -46,23 +46,33 @@ const Register = () => {
 fetchSuggestion();
   }, []);
 
+  const customUsernameRef = useRef(customUsername);
+  const usernameModeRef = useRef(usernameMode);
+
   const checkCustomUsername = async (uname) => {
     if (!uname || !USERNAME_PATTERN.test(uname)) return;
     setCheckingUsername(true);
     setUsernameCheckError(false);
     try {
       const response = await api.get('/auth/username-availability', { params: { username: uname } });
+      if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== uname) return;
       setUsernameAvailable(response.data.available);
       setUsernameCheckError(false);
     } catch (err) { // eslint-disable-line no-unused-vars
+      if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== uname) return;
       setUsernameAvailable(null);
       setUsernameCheckError(true);
     } finally {
-      setCheckingUsername(false);
+      if (usernameModeRef.current === 'custom' && customUsernameRef.current === uname) {
+        setCheckingUsername(false);
+      }
     }
   };
 
   useEffect(() => {
+    customUsernameRef.current = customUsername;
+    usernameModeRef.current = usernameMode;
+
     if (usernameMode !== 'custom' || !customUsername) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
@@ -81,13 +91,17 @@ fetchSuggestion();
     const timeout = setTimeout(async () => {
       try {
         const response = await api.get('/auth/username-availability', { params: { username: customUsername } });
+        if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== customUsername) return;
         setUsernameAvailable(response.data.available);
         setUsernameCheckError(false);
       } catch (err) { // eslint-disable-line no-unused-vars
+        if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== customUsername) return;
         setUsernameAvailable(null);
         setUsernameCheckError(true);
       } finally {
-        setCheckingUsername(false);
+        if (usernameModeRef.current === 'custom' && customUsernameRef.current === customUsername) {
+          setCheckingUsername(false);
+        }
       }
     }, 400);
 

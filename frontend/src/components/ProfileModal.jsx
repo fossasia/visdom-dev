@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { api, useAuth } from '../context/AuthContext';
 import { useToast } from './toast/useToast';
@@ -31,23 +31,31 @@ const ProfileModal = ({ onClose }) => {
   const joined = formatJoined(user?.created_at);
   const lastSignIn = formatLastSignIn(user?.last_login_at);
 
+  const usernameRef = useRef(username);
+
   const checkUsernameAvailability = async (uname) => {
     if (!uname || !USERNAME_PATTERN.test(uname) || isUnchanged) return;
     setCheckingUsername(true);
     setUsernameCheckError(false);
     try {
       const response = await api.get('/auth/username-availability', { params: { username: uname } });
+      if (usernameRef.current !== uname) return;
       setUsernameAvailable(response.data.available);
       setUsernameCheckError(false);
     } catch (err) { // eslint-disable-line no-unused-vars
+      if (usernameRef.current !== uname) return;
       setUsernameAvailable(null);
       setUsernameCheckError(true);
     } finally {
-      setCheckingUsername(false);
+      if (usernameRef.current === uname) {
+        setCheckingUsername(false);
+      }
     }
   };
 
   useEffect(() => {
+    usernameRef.current = username;
+
     if (isUnchanged || !username) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
@@ -66,13 +74,17 @@ const ProfileModal = ({ onClose }) => {
     const timeout = setTimeout(async () => {
       try {
         const response = await api.get('/auth/username-availability', { params: { username } });
+        if (usernameRef.current !== username) return;
         setUsernameAvailable(response.data.available);
         setUsernameCheckError(false);
       } catch (err) { // eslint-disable-line no-unused-vars
+        if (usernameRef.current !== username) return;
         setUsernameAvailable(null);
         setUsernameCheckError(true);
       } finally {
-        setCheckingUsername(false);
+        if (usernameRef.current === username) {
+          setCheckingUsername(false);
+        }
       }
     }, 400);
 
