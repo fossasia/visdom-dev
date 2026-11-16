@@ -5,11 +5,13 @@ import { Check, RefreshCw, X } from 'lucide-react';
 import { useAuth, api } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
 import { resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
+import usePageTitle from '../hooks/usePageTitle';
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
 const USERNAME_AVAILABILITY_TIMEOUT_MS = 5000;
 
 const Register = () => {
+  usePageTitle('Create account');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -170,8 +172,10 @@ fetchSuggestion();
       <div className="visdom-panel auth-panel">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <h2 className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
-            <span>visdom</span>
+            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'inherit', textDecoration: 'none' }}>
+              <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
+              <span>visdom</span>
+            </Link>
           </h2>
           <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Create your user account</div>
         </div>

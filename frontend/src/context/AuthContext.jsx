@@ -11,6 +11,8 @@ const resetClientState = () => {
   clearRequestCache();
 };
 
+const AUTH_CHECK_TIMEOUT_MS = 10000;
+
 // eslint-disable-next-line react-refresh/only-export-components
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -47,7 +49,7 @@ export const AuthProvider = ({ children }) => {
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
           try {
-            const refreshResponse = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true });
+            const refreshResponse = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true, timeout: AUTH_CHECK_TIMEOUT_MS });
             const newAccessToken = refreshResponse.data.access_token;
             
             setAccessToken(newAccessToken);
@@ -73,12 +75,13 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const refreshResponse = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true });
+        const refreshResponse = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true, timeout: AUTH_CHECK_TIMEOUT_MS });
         const initialToken = refreshResponse.data.access_token;
         setAccessToken(initialToken);
         
         const userResponse = await axios.get('/api/v1/auth/me', {
-          headers: { Authorization: `Bearer ${initialToken}` }
+          headers: { Authorization: `Bearer ${initialToken}` },
+          timeout: AUTH_CHECK_TIMEOUT_MS,
         });
         setUser(userResponse.data);
       } catch (e) { // eslint-disable-line no-unused-vars

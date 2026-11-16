@@ -64,5 +64,10 @@ describe('Login', () => {
       await screen.findByText('Login failed. Please check your credentials.')
     ).toBeInTheDocument();
   });
+
+  it('sets the browser tab title', () => {
+    renderLogin();
+    expect(document.title).toBe('Sign in · Visdom');
+  });
 });
 
