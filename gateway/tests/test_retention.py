@@ -179,7 +179,10 @@ def test_a_plan_change_during_the_sweep_stops_the_removal(db_session, instances)
 
     summary = retention.sweep(db_session, enforce=True, ask=upgrade_then_answer)
 
+    dry_runs = [call for call in asked.calls if call["dry_run"]]
     removals = [call for call in asked.calls if not call["dry_run"]]
+    assert len(dry_runs) == 2
+    assert summary["with_expired"] == 1
     assert removals == []
     assert summary["removed"] == 0
 
@@ -198,7 +201,10 @@ def test_an_ownership_transfer_during_the_sweep_stops_the_removal(db_session, in
 
     summary = retention.sweep(db_session, enforce=True, ask=transfer_then_answer)
 
+    dry_runs = [call for call in asked.calls if call["dry_run"]]
     removals = [call for call in asked.calls if not call["dry_run"]]
+    assert len(dry_runs) == 2
+    assert summary["with_expired"] == 1
     assert removals == []
     assert summary["removed"] == 0
 

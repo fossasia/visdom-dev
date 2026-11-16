@@ -96,11 +96,14 @@ def sweepable(db: Session) -> list[Workspace]:
 def unchanged(db: Session, workspace, days) -> bool:
     """Whether the workspace still has the owner and window it was read with.
 
-    The row is locked while it is read, so an ownership transfer, which locks
-    the same row, cannot land between this check and the removal that follows.
+    The row is locked while it is read, so a transfer in the middle of committing
+    is either fully seen here or finishes before this reads. A workspace that was
+    suspended or trashed since it was selected is no longer one the sweep visits.
     """
     current = db.query(Workspace).filter(Workspace.id == workspace.id).with_for_update().first()
-    if current is None or current.created_by != workspace.created_by:
+    if current is None or not current.is_active or current.trashed_at is not None:
+        return False
+    if current.created_by != workspace.created_by:
         return False
     return window_for(db, current) == days
 
@@ -152,15 +155,13 @@ def sweep_workspace(workspace: Workspace, days, enforce: bool, ask=ask_instance,
     if target is None:
         logger.warning("retention: %s skipped, an instance did not answer", workspace.slug)
         return result
-    if db is not None and not unchanged(db, workspace, days):
+    if db is not None:
+        current = unchanged(db, workspace, days)
         db.commit()
-        logger.info("retention: %s skipped, its owner or plan changed during the sweep", workspace.slug)
-        return result
-    try:
-        done = ask(target, workspace.id, days, False, timeout)
-    finally:
-        if db is not None:
-            db.commit()
+        if not current:
+            logger.info("retention: %s skipped, it changed during the sweep", workspace.slug)
+            return result
+    done = ask(target, workspace.id, days, False, timeout)
     result["removed"] = (done or {}).get("removed", 0)
     return result
 
