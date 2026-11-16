@@ -22,6 +22,7 @@ const Register = () => {
   const [customUsername, setCustomUsername] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState(null); // null | true | false
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameCheckError, setUsernameCheckError] = useState(false);
 
   const { register, login } = useAuth();
   const navigate = useNavigate();
@@ -45,25 +46,46 @@ const Register = () => {
 fetchSuggestion();
   }, []);
 
+  const checkCustomUsername = async (uname) => {
+    if (!uname || !USERNAME_PATTERN.test(uname)) return;
+    setCheckingUsername(true);
+    setUsernameCheckError(false);
+    try {
+      const response = await api.get('/auth/username-availability', { params: { username: uname } });
+      setUsernameAvailable(response.data.available);
+      setUsernameCheckError(false);
+    } catch (err) { // eslint-disable-line no-unused-vars
+      setUsernameAvailable(null);
+      setUsernameCheckError(true);
+    } finally {
+      setCheckingUsername(false);
+    }
+  };
+
   useEffect(() => {
     if (usernameMode !== 'custom' || !customUsername) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
+      setUsernameCheckError(false);
       return;
     }
 
     if (!USERNAME_PATTERN.test(customUsername)) {
       setUsernameAvailable(false);
+      setUsernameCheckError(false);
       return;
     }
 
     setCheckingUsername(true);
+    setUsernameCheckError(false);
     const timeout = setTimeout(async () => {
       try {
         const response = await api.get('/auth/username-availability', { params: { username: customUsername } });
         setUsernameAvailable(response.data.available);
+        setUsernameCheckError(false);
       } catch (err) { // eslint-disable-line no-unused-vars
         setUsernameAvailable(null);
+        setUsernameCheckError(true);
       } finally {
         setCheckingUsername(false);
       }
@@ -255,15 +277,35 @@ fetchSuggestion();
                       </span>
                     ) : checkingUsername ? (
                       <span style={{ color: 'var(--text-muted)' }}>Checking availability...</span>
-                    ) : usernameAvailable ? (
+                    ) : usernameCheckError ? (
+                      <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>Could not check availability.</span>
+                        <button
+                          type="button"
+                          onClick={() => checkCustomUsername(customUsername)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#3b5998',
+                            textDecoration: 'underline',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: '12px',
+                            fontWeight: '600',
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </span>
+                    ) : usernameAvailable === true ? (
                       <span style={{ color: 'var(--success-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Check size={12} /> Available
                       </span>
-                    ) : (
+                    ) : usernameAvailable === false ? (
                       <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <X size={12} /> Already taken
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </>

@@ -17,6 +17,7 @@ const ProfileModal = ({ onClose }) => {
   const [username, setUsername] = useState(user?.username || '');
   const [usernameAvailable, setUsernameAvailable] = useState(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameCheckError, setUsernameCheckError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -30,25 +31,46 @@ const ProfileModal = ({ onClose }) => {
   const joined = formatJoined(user?.created_at);
   const lastSignIn = formatLastSignIn(user?.last_login_at);
 
+  const checkUsernameAvailability = async (uname) => {
+    if (!uname || !USERNAME_PATTERN.test(uname) || isUnchanged) return;
+    setCheckingUsername(true);
+    setUsernameCheckError(false);
+    try {
+      const response = await api.get('/auth/username-availability', { params: { username: uname } });
+      setUsernameAvailable(response.data.available);
+      setUsernameCheckError(false);
+    } catch (err) { // eslint-disable-line no-unused-vars
+      setUsernameAvailable(null);
+      setUsernameCheckError(true);
+    } finally {
+      setCheckingUsername(false);
+    }
+  };
+
   useEffect(() => {
     if (isUnchanged || !username) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
+      setUsernameCheckError(false);
       return;
     }
 
     if (!USERNAME_PATTERN.test(username)) {
       setUsernameAvailable(false);
+      setUsernameCheckError(false);
       return;
     }
 
     setCheckingUsername(true);
+    setUsernameCheckError(false);
     const timeout = setTimeout(async () => {
       try {
         const response = await api.get('/auth/username-availability', { params: { username } });
         setUsernameAvailable(response.data.available);
+        setUsernameCheckError(false);
       } catch (err) { // eslint-disable-line no-unused-vars
         setUsernameAvailable(null);
+        setUsernameCheckError(true);
       } finally {
         setCheckingUsername(false);
       }
@@ -160,15 +182,35 @@ const ProfileModal = ({ onClose }) => {
                 </span>
               ) : checkingUsername ? (
                 <span style={{ color: 'var(--text-muted)' }}>Checking availability...</span>
-              ) : usernameAvailable ? (
+              ) : usernameCheckError ? (
+                <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Could not check availability.</span>
+                  <button
+                    type="button"
+                    onClick={() => checkUsernameAvailability(username)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--vc-blue, #3b5998)',
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontSize: '12px',
+                      fontWeight: '600',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </span>
+              ) : usernameAvailable === true ? (
                 <span style={{ color: 'var(--success-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Check size={12} /> Available
                 </span>
-              ) : (
+              ) : usernameAvailable === false ? (
                 <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <X size={12} /> Already taken
                 </span>
-              )}
+              ) : null}
             </div>
           )}
         </div>
