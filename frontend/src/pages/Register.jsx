@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Check, RefreshCw, X } from 'lucide-react';
 import { useAuth, api } from '../context/AuthContext';
@@ -8,6 +8,7 @@ import { resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
+const USERNAME_AVAILABILITY_TIMEOUT_MS = 5000;
 
 const Register = () => {
   usePageTitle('Create account');
@@ -24,6 +25,7 @@ const Register = () => {
   const [customUsername, setCustomUsername] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState(null); // null | true | false
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameCheckError, setUsernameCheckError] = useState(false);
 
   const { register, login } = useAuth();
   const navigate = useNavigate();
@@ -47,27 +49,68 @@ const Register = () => {
 fetchSuggestion();
   }, []);
 
+  const customUsernameRef = useRef(customUsername);
+  const usernameModeRef = useRef(usernameMode);
+
+  const checkCustomUsername = async (uname) => {
+    if (!uname || !USERNAME_PATTERN.test(uname)) return;
+    setCheckingUsername(true);
+    setUsernameCheckError(false);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
+    try {
+      const response = await api.get('/auth/username-availability', { params: { username: uname }, signal: controller.signal });
+      if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== uname) return;
+      setUsernameAvailable(response.data.available);
+      setUsernameCheckError(false);
+    } catch (err) { // eslint-disable-line no-unused-vars
+      if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== uname) return;
+      setUsernameAvailable(null);
+      setUsernameCheckError(true);
+    } finally {
+      clearTimeout(timer);
+      if (usernameModeRef.current === 'custom' && customUsernameRef.current === uname) {
+        setCheckingUsername(false);
+      }
+    }
+  };
+
   useEffect(() => {
+    customUsernameRef.current = customUsername;
+    usernameModeRef.current = usernameMode;
+
     if (usernameMode !== 'custom' || !customUsername) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
+      setUsernameCheckError(false);
       return;
     }
 
     if (!USERNAME_PATTERN.test(customUsername)) {
       setUsernameAvailable(false);
+      setUsernameCheckError(false);
       return;
     }
 
     setCheckingUsername(true);
+    setUsernameCheckError(false);
     const timeout = setTimeout(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
       try {
-        const response = await api.get('/auth/username-availability', { params: { username: customUsername } });
+        const response = await api.get('/auth/username-availability', { params: { username: customUsername }, signal: controller.signal });
+        if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== customUsername) return;
         setUsernameAvailable(response.data.available);
+        setUsernameCheckError(false);
       } catch (err) { // eslint-disable-line no-unused-vars
+        if (usernameModeRef.current !== 'custom' || customUsernameRef.current !== customUsername) return;
         setUsernameAvailable(null);
+        setUsernameCheckError(true);
       } finally {
-        setCheckingUsername(false);
+        clearTimeout(timer);
+        if (usernameModeRef.current === 'custom' && customUsernameRef.current === customUsername) {
+          setCheckingUsername(false);
+        }
       }
     }, 400);
 
@@ -259,15 +302,35 @@ fetchSuggestion();
                       </span>
                     ) : checkingUsername ? (
                       <span style={{ color: 'var(--text-muted)' }}>Checking availability...</span>
-                    ) : usernameAvailable ? (
+                    ) : usernameCheckError ? (
+                      <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>Could not check availability.</span>
+                        <button
+                          type="button"
+                          onClick={() => checkCustomUsername(customUsername)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#3b5998',
+                            textDecoration: 'underline',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: '12px',
+                            fontWeight: '600',
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </span>
+                    ) : usernameAvailable === true ? (
                       <span style={{ color: 'var(--success-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Check size={12} /> Available
                       </span>
-                    ) : (
+                    ) : usernameAvailable === false ? (
                       <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <X size={12} /> Already taken
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </>

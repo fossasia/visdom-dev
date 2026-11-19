@@ -1,5 +1,5 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { api, useAuth } from '../context/AuthContext';
 import { useToast } from './toast/useToast';
@@ -11,12 +11,14 @@ import { formatJoined, formatLastSignIn, planName } from '../utils/profileDetail
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
 const MIN_PASSWORD = 6;
+const USERNAME_AVAILABILITY_TIMEOUT_MS = 5000;
 
 const ProfileModal = ({ onClose }) => {
   const { user, setUser, setAccessToken } = useAuth();
   const [username, setUsername] = useState(user?.username || '');
   const [usernameAvailable, setUsernameAvailable] = useState(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameCheckError, setUsernameCheckError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -30,27 +32,66 @@ const ProfileModal = ({ onClose }) => {
   const joined = formatJoined(user?.created_at);
   const lastSignIn = formatLastSignIn(user?.last_login_at);
 
+  const usernameRef = useRef(username);
+
+  const checkUsernameAvailability = async (uname) => {
+    if (!uname || !USERNAME_PATTERN.test(uname) || isUnchanged) return;
+    setCheckingUsername(true);
+    setUsernameCheckError(false);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
+    try {
+      const response = await api.get('/auth/username-availability', { params: { username: uname }, signal: controller.signal });
+      if (usernameRef.current !== uname) return;
+      setUsernameAvailable(response.data.available);
+      setUsernameCheckError(false);
+    } catch (err) { // eslint-disable-line no-unused-vars
+      if (usernameRef.current !== uname) return;
+      setUsernameAvailable(null);
+      setUsernameCheckError(true);
+    } finally {
+      clearTimeout(timer);
+      if (usernameRef.current === uname) {
+        setCheckingUsername(false);
+      }
+    }
+  };
+
   useEffect(() => {
+    usernameRef.current = username;
+
     if (isUnchanged || !username) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsernameAvailable(null);
+      setUsernameCheckError(false);
       return;
     }
 
     if (!USERNAME_PATTERN.test(username)) {
       setUsernameAvailable(false);
+      setUsernameCheckError(false);
       return;
     }
 
     setCheckingUsername(true);
+    setUsernameCheckError(false);
     const timeout = setTimeout(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), USERNAME_AVAILABILITY_TIMEOUT_MS);
       try {
-        const response = await api.get('/auth/username-availability', { params: { username } });
+        const response = await api.get('/auth/username-availability', { params: { username }, signal: controller.signal });
+        if (usernameRef.current !== username) return;
         setUsernameAvailable(response.data.available);
+        setUsernameCheckError(false);
       } catch (err) { // eslint-disable-line no-unused-vars
+        if (usernameRef.current !== username) return;
         setUsernameAvailable(null);
+        setUsernameCheckError(true);
       } finally {
-        setCheckingUsername(false);
+        clearTimeout(timer);
+        if (usernameRef.current === username) {
+          setCheckingUsername(false);
+        }
       }
     }, 400);
 
@@ -160,15 +201,35 @@ const ProfileModal = ({ onClose }) => {
                 </span>
               ) : checkingUsername ? (
                 <span style={{ color: 'var(--text-muted)' }}>Checking availability...</span>
-              ) : usernameAvailable ? (
+              ) : usernameCheckError ? (
+                <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Could not check availability.</span>
+                  <button
+                    type="button"
+                    onClick={() => checkUsernameAvailability(username)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--vc-blue, #3b5998)',
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontSize: '12px',
+                      fontWeight: '600',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </span>
+              ) : usernameAvailable === true ? (
                 <span style={{ color: 'var(--success-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Check size={12} /> Available
                 </span>
-              ) : (
+              ) : usernameAvailable === false ? (
                 <span style={{ color: 'var(--danger-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <X size={12} /> Already taken
                 </span>
-              )}
+              ) : null}
             </div>
           )}
         </div>
