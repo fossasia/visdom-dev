@@ -169,6 +169,7 @@ describe('SharedLinksTab', () => {
         `/workspaces/${workspaceId}/share`,
         expect.objectContaining({
           role: 'admin',
+          expires_at: new Date('2026-12-31T23:59').toISOString(),
           password: 'secretPass123',
           invite_email: 'newuser@example.com',
         })
