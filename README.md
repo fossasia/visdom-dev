@@ -92,6 +92,8 @@ Then open `http://localhost:8080`. Migrations run when the gateway starts.
 
 The proxy speaks plain HTTP. On a public server put something that terminates HTTPS in front of it (the test deployment uses Caddy) and set `COOKIE_SECURE=True`.
 
+The proxy port is published on `127.0.0.1` only, so that HTTPS server has to run on the same host. Set `PUBLIC_HOST=0.0.0.0` in `.env` to publish it on every interface instead. Docker Engine older than 28 still lets other machines on the same local network reach a port published on localhost, so use Docker 28 or newer, or block `PUBLIC_PORT` in the host firewall.
+
 More on running it:
 
 | Doc | About |

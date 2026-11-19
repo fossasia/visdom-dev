@@ -137,6 +137,46 @@ server {
         access_log off;
     }
 
+    location = /vis/_metrics {
+        deny all;
+        access_log off;
+    }
+
+    location ~ ^/vis/w/[^/]+/_metrics {
+        deny all;
+        access_log off;
+    }
+
+    location = /vis/_evict {
+        deny all;
+        access_log off;
+    }
+
+    location ~ ^/vis/w/[^/]+/_evict {
+        deny all;
+        access_log off;
+    }
+
+    location = /vis/_retire {
+        deny all;
+        access_log off;
+    }
+
+    location ~ ^/vis/w/[^/]+/_retire {
+        deny all;
+        access_log off;
+    }
+
+    location = /vis/_drop {
+        deny all;
+        access_log off;
+    }
+
+    location ~ ^/vis/w/[^/]+/_drop {
+        deny all;
+        access_log off;
+    }
+
     location = /vis/_shard {
         allow 172.16.0.0/12;
         deny all;

@@ -150,7 +150,7 @@ services:
       GATEWAY_PORT: ${GATEWAY_PORT}
       VISDOM_SERVERS: ${VISDOM_SERVERS}
     ports:
-      - "${PUBLIC_PORT}:${NGINX_PORT}"
+      - "${PUBLIC_HOST:-127.0.0.1}:${PUBLIC_PORT}:${NGINX_PORT}"
     depends_on:
       - gateway
       - visdom-1
