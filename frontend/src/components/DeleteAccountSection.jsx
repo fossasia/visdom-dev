@@ -58,7 +58,7 @@ const DeleteAccountSection = ({ onClose }) => {
 
   return (
     <div className="gc-password-form">
-      <label className="gc-label gc-mb-1 gc-text-danger">Delete account</label>
+      <div className="gc-label gc-mb-1 gc-text-danger">Delete account</div>
 
       {!preview && (
         <>

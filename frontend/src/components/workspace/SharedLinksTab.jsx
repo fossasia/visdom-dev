@@ -118,16 +118,16 @@ fetchLinks();
           className="gc-flex-row-end"
         >
           <div className="gc-flex-grow-140">
-            <label className="gc-label">Joins as</label>
-            <select className="gc-select" value={role} onChange={(e) => setRole(e.target.value)}>
+            <label htmlFor="share-role" className="gc-label">Joins as</label>
+            <select id="share-role" className="gc-select" value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="admin">Admin</option>
               <option value="member">Member</option>
               <option value="viewer">Viewer</option>
             </select>
           </div>
           <div className="gc-flex-grow-140">
-            <label className="gc-label">Expires</label>
-            <select className="gc-select" value={expiryPreset} onChange={(e) => setExpiryPreset(e.target.value)}>
+            <label htmlFor="share-expiry" className="gc-label">Expires</label>
+            <select id="share-expiry" className="gc-select" value={expiryPreset} onChange={(e) => setExpiryPreset(e.target.value)}>
               {EXPIRY_PRESETS.map((preset) => (
                 <option key={preset.value} value={preset.value}>
                   {preset.label}
@@ -137,8 +137,9 @@ fetchLinks();
           </div>
           {expiryPreset === 'custom' && (
             <div className="gc-flex-grow-180">
-              <label className="gc-label">Custom date &amp; time</label>
+              <label htmlFor="share-custom-expiry" className="gc-label">Custom date &amp; time</label>
               <input
+                id="share-custom-expiry"
                 type="datetime-local"
                 className="gc-input"
                 value={customExpiresAt}
@@ -147,8 +148,9 @@ fetchLinks();
             </div>
           )}
           <div className="gc-flex-grow-180">
-            <label className="gc-label">Password (optional)</label>
+            <label htmlFor="share-password" className="gc-label">Password (optional)</label>
             <input
+              id="share-password"
               type="text"
               className="gc-input"
               placeholder="Leave blank for no password"
@@ -157,8 +159,9 @@ fetchLinks();
             />
           </div>
           <div className="gc-flex-grow-180">
-            <label className="gc-label">Email this link to (optional)</label>
+            <label htmlFor="share-email" className="gc-label">Email this link to (optional)</label>
             <input
+              id="share-email"
               type="email"
               className="gc-input"
               placeholder="person@example.com"
