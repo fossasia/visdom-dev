@@ -309,6 +309,9 @@ describe('BillingTab', () => {
       await waitFor(() => {
         expect(mocks.api.post).toHaveBeenCalledWith('/billing/subscription', { tier: 'free' });
         expect(mocks.setUser).toHaveBeenCalledWith(expect.objectContaining({ tier: 'free' }));
+        const freeCard = screen.getByText('Free').closest('.gc-price-card');
+        expect(within(freeCard).getByText('Current Plan', { selector: '.gc-current-pill' })).toBeInTheDocument();
+        expect(within(freeCard).getByRole('button', { name: 'Current Plan' })).toBeDisabled();
       });
     });
 
