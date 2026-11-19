@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     RETENTION_STARTS: datetime.date | None = None
     RETENTION_WARN_DAYS: int = 3
     ACCOUNT_DELETION_HOURS: int = 6
+    INVITE_EXPIRY_DAYS: int = 30
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""

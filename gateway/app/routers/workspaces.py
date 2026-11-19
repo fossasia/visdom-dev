@@ -16,8 +16,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
-from app import retention
+from app import invites, retention
 from app.admin.activity import FilesKept, drop_workspace
 from app.config import settings
 from app.dependencies import commit_or_conflict, get_current_user, get_db
@@ -245,6 +246,33 @@ def set_workspace_starred(
     return _to_my_workspace_response(workspace, membership)
 
 
+def _drop_expired_invite(
+    db: Session, workspace_id: uuid.UUID, email: str, invitee: User | None
+) -> None:
+    """Clear an expired invite to this email so it can be sent again before the sweep.
+
+    The delete itself checks the row is still an expired pending invite, so an
+    invite accepted between the lookup and the delete is never removed.
+    """
+    before = invites.cutoff()
+    if before is None:
+        return
+    if invitee:
+        db.query(Membership).filter(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == invitee.id,
+            Membership.status == "pending_acceptance",
+            Membership.invited_at < before,
+        ).delete(synchronize_session="fetch")
+    else:
+        db.query(WorkspaceInvite).filter(
+            WorkspaceInvite.workspace_id == workspace_id,
+            WorkspaceInvite.email == email,
+            WorkspaceInvite.created_at < before,
+        ).delete(synchronize_session="fetch")
+    db.flush()
+
+
 # --- MEMBERSHIPS ---
 @router.post("/{workspace_id}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 def invite_member(
@@ -259,10 +287,11 @@ def invite_member(
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
 
-    refuse_if_no_seat(db, _owner_of(db, workspace) or current_user)
-
     email_lower = invite.email.strip().lower()
     invitee = db.query(User).filter(User.email == email_lower).first()
+    _drop_expired_invite(db, workspace_id, email_lower, invitee)
+
+    refuse_if_no_seat(db, _owner_of(db, workspace) or current_user)
 
     if invitee:
         if _get_membership(db, workspace_id, invitee.id):
@@ -271,7 +300,8 @@ def invite_member(
                 detail="User is already a member of, or already has a pending invite to, this workspace.",
             )
         membership = Membership(
-            user_id=invitee.id, workspace_id=workspace_id, role=invite.role, status="pending_acceptance"
+            user_id=invitee.id, workspace_id=workspace_id, role=invite.role, status="pending_acceptance",
+            invited_at=utcnow()
         )
         db.add(membership)
         commit_or_conflict(
@@ -554,14 +584,55 @@ def approve_member(
     return _to_member_response(membership)
 
 
+def _commit_or_expired(db: Session, membership: Membership) -> None:
+    """Commit this invite write, or 410 if the expiry sweep removed the row.
+
+    The pending membership is loaded and then written later. The sweep can
+    delete that row in between, on its own transaction. The UPDATE or DELETE
+    then matches nothing and SQLAlchemy raises ``StaleDataError``. A missing
+    row is the expired-invite outcome. A stale write that leaves the row in
+    place is not, and every other database error propagates unchanged.
+    """
+    user_id = membership.user_id
+    workspace_id = membership.workspace_id
+    try:
+        db.commit()
+    except StaleDataError:
+        db.rollback()
+        still_there = (
+            db.query(Membership.user_id)
+            .filter(Membership.user_id == user_id, Membership.workspace_id == workspace_id)
+            .first()
+        )
+        if still_there is None:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="This invite has expired.",
+            ) from None
+        raise
+
+
 @router.post("/{workspace_id}/members/me/accept", response_model=MemberResponse)
 def accept_invite(
     workspace_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Accepts a direct email invite sent to the current user."""
-    membership = _get_membership(db, workspace_id, current_user.id)
+    """Accept a direct email invite sent to the current user.
+
+    The row is locked for the decision, so on PostgreSQL the expiry sweep
+    cannot delete it until this request finishes. An invite past
+    ``INVITE_EXPIRY_DAYS`` is removed and refused. If the sweep still wins the
+    race and the pending row is gone before the write commits, the response is
+    the same expired-invite refusal rather than a stale-row error.
+    """
+    membership = (
+        db.query(Membership)
+        .filter(Membership.workspace_id == workspace_id, Membership.user_id == current_user.id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No invite found for this workspace.")
     if membership.status != "pending_acceptance":
@@ -569,13 +640,17 @@ def accept_invite(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="There's no pending invite for you to accept in this workspace.",
         )
+    if invites.is_expired(membership.invited_at):
+        db.delete(membership)
+        _commit_or_expired(db, membership)
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invite has expired.")
 
     owner = _owner_of(db, membership.workspace)
     if owner is not None and owner.id != current_user.id:
         refuse_if_full(db, owner)
 
     membership.status = "active"
-    db.commit()
+    _commit_or_expired(db, membership)
     db.refresh(membership)
     return _to_member_response(membership)
 
