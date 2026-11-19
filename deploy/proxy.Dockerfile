@@ -8,7 +8,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2 — nginx serving the built SPA and reverse-proxying the backends.
-FROM nginx:1.27-alpine
+FROM nginx:1.31.9-alpine
 COPY --from=frontend /src/dist /usr/share/nginx/html
 # Rendered by the image's envsubst entrypoint using the environment (see compose).
 COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
