@@ -2,7 +2,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BillingTab from '../BillingTab';
 import { clearRequestCache } from '../../../utils/requestCache';
 
@@ -77,6 +77,8 @@ describe('BillingTab', () => {
     },
   };
 
+  const originalLocation = window.location;
+
   beforeEach(() => {
     vi.clearAllMocks();
     clearRequestCache();
@@ -86,6 +88,11 @@ describe('BillingTab', () => {
       if (url === '/billing/subscription') return Promise.resolve({ data: subscription });
       return Promise.reject(new Error(`Unhandled GET: ${url}`));
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.location = originalLocation;
   });
 
   describe('loading state', () => {
@@ -245,34 +252,35 @@ describe('BillingTab', () => {
     it('opens Stripe billing portal when clicking Manage billing', async () => {
       const user = userEvent.setup();
       const assignMock = vi.fn();
-      const originalLocation = window.location;
       delete window.location;
       window.location = { ...originalLocation, assign: assignMock };
 
-      mocks.api.get.mockImplementation((url) => {
-        if (url === '/billing/plans') return Promise.resolve({ data: plans });
-        if (url === '/billing/subscription') {
-          return Promise.resolve({
-            data: {
-              ...subscription,
-              billing: { status: 'active', can_manage: true },
-            },
-          });
-        }
-        return Promise.reject(new Error(`Unhandled GET: ${url}`));
-      });
-      mocks.api.post.mockResolvedValue({ data: { url: 'https://billing.stripe.com/session_test' } });
+      try {
+        mocks.api.get.mockImplementation((url) => {
+          if (url === '/billing/plans') return Promise.resolve({ data: plans });
+          if (url === '/billing/subscription') {
+            return Promise.resolve({
+              data: {
+                ...subscription,
+                billing: { status: 'active', can_manage: true },
+              },
+            });
+          }
+          return Promise.reject(new Error(`Unhandled GET: ${url}`));
+        });
+        mocks.api.post.mockResolvedValue({ data: { url: 'https://billing.stripe.com/session_test' } });
 
-      render(<BillingTab />);
+        render(<BillingTab />);
 
-      await user.click(await screen.findByRole('button', { name: 'Manage billing' }));
+        await user.click(await screen.findByRole('button', { name: 'Manage billing' }));
 
-      await waitFor(() => {
-        expect(mocks.api.post).toHaveBeenCalledWith('/billing/portal');
-        expect(assignMock).toHaveBeenCalledWith('https://billing.stripe.com/session_test');
-      });
-
-      window.location = originalLocation;
+        await waitFor(() => {
+          expect(mocks.api.post).toHaveBeenCalledWith('/billing/portal');
+          expect(assignMock).toHaveBeenCalledWith('https://billing.stripe.com/session_test');
+        });
+      } finally {
+        window.location = originalLocation;
+      }
     });
 
     it('switches to free tier directly via API', async () => {
@@ -394,7 +402,6 @@ describe('BillingTab', () => {
     });
 
     it('handles checkout redirect URL parameter and confirms subscription', async () => {
-      const originalLocation = window.location;
       delete window.location;
       window.location = {
         ...originalLocation,
@@ -403,33 +410,36 @@ describe('BillingTab', () => {
       };
       const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
 
-      mocks.api.get.mockImplementation((url) => {
-        if (url === '/billing/plans') return Promise.resolve({ data: plans });
-        if (url === '/billing/subscription') return Promise.resolve({ data: subscription });
-        if (url === '/billing/checkout/sess_returned_999') {
-          return Promise.resolve({
-            data: {
-              status: 'complete',
-              subscription: {
-                ...subscription,
-                tier: 'pro',
-                plan: { id: 'pro', name: 'Pro' },
-                billing: { status: 'active', can_manage: true },
+      try {
+        mocks.api.get.mockImplementation((url) => {
+          if (url === '/billing/plans') return Promise.resolve({ data: plans });
+          if (url === '/billing/subscription') return Promise.resolve({ data: subscription });
+          if (url === '/billing/checkout/sess_returned_999') {
+            return Promise.resolve({
+              data: {
+                status: 'complete',
+                subscription: {
+                  ...subscription,
+                  tier: 'pro',
+                  plan: { id: 'pro', name: 'Pro' },
+                  billing: { status: 'active', can_manage: true },
+                },
               },
-            },
-          });
-        }
-        return Promise.reject(new Error(`Unhandled GET: ${url}`));
-      });
+            });
+          }
+          return Promise.reject(new Error(`Unhandled GET: ${url}`));
+        });
 
-      render(<BillingTab />);
+        render(<BillingTab />);
 
-      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/workspaces');
-      await waitFor(() => {
-        expect(mocks.toast.success).toHaveBeenCalledWith('You are now on Pro.');
-      });
-
-      window.location = originalLocation;
+        expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/workspaces');
+        await waitFor(() => {
+          expect(mocks.toast.success).toHaveBeenCalledWith('You are now on Pro.');
+        });
+      } finally {
+        replaceStateSpy.mockRestore();
+        window.location = originalLocation;
+      }
     });
   });
 });
