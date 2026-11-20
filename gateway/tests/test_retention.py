@@ -853,6 +853,19 @@ def test_an_environment_used_again_loses_its_notice(db_session, instances, rules
     assert set(workspace.retention_notice) == {"january"}
 
 
+def test_a_failed_send_still_drops_notice_for_what_left_the_list(db_session, instances, rules, monkeypatch):
+    rules(enforce=True, warn=3)
+    workspace = _workspace(db_session, _owner(db_session, "free"), slug="failed-send")
+    _noticed(db_session, workspace, days_ago=5, envs=["january", "touched"])
+    first = dict(workspace.retention_notice)
+    monkeypatch.setattr(retention.outbound, "configured", lambda: True)
+    monkeypatch.setattr(retention.outbound, "send", lambda *args: False)
+
+    assert retention.warn_owners(db_session, ask=Recorder(envs=["january", "fresh"]), now=utcnow()) == 0
+    db_session.refresh(workspace)
+    assert workspace.retention_notice == {"january": first["january"]}
+
+
 def test_an_empty_list_clears_all_notice(db_session, instances, rules, mailbox):
     rules(enforce=True, warn=3)
     workspace = _workspace(db_session, _owner(db_session, "free"), slug="all-saved")

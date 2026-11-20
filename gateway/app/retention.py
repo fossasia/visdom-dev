@@ -467,6 +467,10 @@ def warn_owners(
                     earlier=sorted(kept),
                 )
                 if not delivered:
+                    # What left the list loses its notice even though nothing
+                    # new was named, or a stale date could authorize removal.
+                    if kept != notice:
+                        _store_notice(db, workspace, days, kept, workspace.retention_warned_at)
                     continue
                 handed = clock()
                 kept.update({env: handed.isoformat() for env in new})
