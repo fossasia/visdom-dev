@@ -141,3 +141,20 @@ def test_invites_still_waiting_count_as_members_arriving(client, make_user, make
     refused = _hand_over(client, workspace, owner, member)
     assert refused.status_code == 402
     assert "members" in refused.json()["detail"]
+
+
+def test_a_new_owner_gets_their_own_retention_warning(client, make_user, make_workspace, add_member, db_session):
+    from app.models import utcnow
+
+    owner = make_user()
+    member = make_user(tier="pro")
+    workspace = make_workspace(owner)
+    add_member(owner, workspace, member)
+    row = db_session.query(Workspace).filter(Workspace.id == uuid.UUID(workspace["id"])).first()
+    row.retention_warned_at = utcnow()
+    db_session.commit()
+
+    assert _hand_over(client, workspace, owner, member).status_code == 200
+    db_session.expire_all()
+    row = db_session.query(Workspace).filter(Workspace.id == uuid.UUID(workspace["id"])).first()
+    assert row.retention_warned_at is None
