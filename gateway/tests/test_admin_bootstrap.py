@@ -15,6 +15,12 @@ def mock_password_prompts(monkeypatch, *passwords):
     )
 
 
+def assert_admin_email_lookup(db, expected_email):
+    predicate = db.query.return_value.filter.call_args.args[0]
+    assert predicate.left.compare(AdminUser.__table__.c.email)
+    assert predicate.right.value == expected_email
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -90,7 +96,7 @@ def test_main_creates_new_admin_user(monkeypatch, capsys):
     bootstrap.main(["  NEW@EXAMPLE.COM ", " admin "])
 
     db.query.assert_called_once_with(AdminUser)
-    db.query.return_value.filter.assert_called_once()
+    assert_admin_email_lookup(db, "new@example.com")
 
     created_admin = db.add.call_args.args[0]
 
@@ -128,6 +134,7 @@ def test_main_updates_existing_admin_user(monkeypatch, capsys):
     )
 
     bootstrap.main(["STAFF@EXAMPLE.COM", " superadmin "])
+    assert_admin_email_lookup(db, "staff@example.com")
 
     assert existing_admin.role == "superadmin"
     assert existing_admin.password_hash == "new-hash"
