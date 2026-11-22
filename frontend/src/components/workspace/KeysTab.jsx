@@ -179,7 +179,6 @@ fetchKeys();
                 <input
                   id="key-scope-org"
                   type="radio"
-                  aria-label="All workspaces"
                   name="key-scope"
                   checked={scope === 'org'}
                   onChange={() => setScope('org')}
@@ -193,7 +192,6 @@ fetchKeys();
                 <input
                   id="key-scope-workspace"
                   type="radio"
-                  aria-label="Only select workspaces"
                   name="key-scope"
                   checked={scope === 'workspace'}
                   onChange={() => setScope('workspace')}
@@ -224,6 +222,7 @@ fetchKeys();
               {expiryPreset === 'custom' && (
                 <input
                   type="datetime-local"
+                  aria-label="Custom expiration date and time"
                   className="gc-input gc-mt-sm"
                   value={customExpiresAt}
                   onChange={(e) => setCustomExpiresAt(e.target.value)}
@@ -244,7 +243,6 @@ fetchKeys();
                         <input
                           id={`key-ws-${ws.id}`}
                           type="checkbox"
-                          aria-label={ws.name}
                           checked={selectedWorkspaceIds.includes(ws.id)}
                           onChange={() => toggleWorkspace(ws.id)}
                         />
