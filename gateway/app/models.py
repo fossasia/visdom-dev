@@ -155,7 +155,6 @@ class Membership(Base):
     role = Column(String, default="member")
     starred = Column(Boolean, default=False)
     status = Column(String, nullable=False, default="active", server_default="active")
-    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=True)
     invited_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (

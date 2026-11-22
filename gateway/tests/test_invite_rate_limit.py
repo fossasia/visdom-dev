@@ -83,7 +83,7 @@ def test_daily_limit_counts_registered_user_invites(client, make_user, db_sessio
                 workspace_id=ws_id,
                 role="member",
                 status="pending_acceptance",
-                created_at=utcnow(),
+                invited_at=utcnow(),
             )
         )
     db_session.commit()

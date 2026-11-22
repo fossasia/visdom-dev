@@ -111,7 +111,7 @@ def invites_sent_last_24h(db: Session, workspace_id) -> int:
         .filter(
             Membership.workspace_id == workspace_id,
             Membership.status == "pending_acceptance",
-            Membership.created_at >= since,
+            Membership.invited_at >= since,
         )
         .count()
     )
