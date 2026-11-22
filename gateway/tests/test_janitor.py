@@ -3,7 +3,6 @@ import datetime
 import uuid
 
 from app.admin.janitor import (
-    STALE_KEY_DAYS,
     answered_invites,
     empty_workspaces,
     expired_links,
@@ -140,8 +139,8 @@ def test_a_key_used_within_90_days_is_not_flagged(db_session):
         db_session,
         owner,
         "recent",
-        created_at=utcnow() - datetime.timedelta(days=STALE_KEY_DAYS + 10),
-        last_used_at=utcnow() - datetime.timedelta(days=STALE_KEY_DAYS - 1),
+        created_at=utcnow() - datetime.timedelta(days=100),
+        last_used_at=utcnow() - datetime.timedelta(days=89),
     )
 
     assert unused_keys(db_session) == []
@@ -149,12 +148,12 @@ def test_a_key_used_within_90_days_is_not_flagged(db_session):
 
 def test_a_key_unused_for_90_days_is_flagged(db_session):
     owner = _user(db_session, "owner@example.com", "owner")
-    used = utcnow() - datetime.timedelta(days=STALE_KEY_DAYS + 1)
+    used = utcnow() - datetime.timedelta(days=91)
     stale = _key(
         db_session,
         owner,
         "stale",
-        created_at=utcnow() - datetime.timedelta(days=STALE_KEY_DAYS + 10),
+        created_at=utcnow() - datetime.timedelta(days=100),
         last_used_at=used,
     )
 
