@@ -160,8 +160,9 @@ fetchKeys();
 
         <form onSubmit={handleCreateKey} className="gc-flex-col-gap-md">
           <div className="gc-field">
-            <label className="gc-label">Key name</label>
+            <label htmlFor="key-name" className="gc-label">Key name</label>
             <input
+              id="key-name"
               type="text"
               required
               className="gc-input"
@@ -173,9 +174,10 @@ fetchKeys();
 
           <div className="gc-fields-row">
             <div className="gc-field gc-flex-1">
-              <label className="gc-label">Access</label>
-              <label className="gc-flex-row-gap-sm gc-radio-label">
+              <div className="gc-label">Access</div>
+              <label htmlFor="key-scope-org" className="gc-flex-row-gap-sm gc-radio-label">
                 <input
+                  id="key-scope-org"
                   type="radio"
                   name="key-scope"
                   checked={scope === 'org'}
@@ -186,8 +188,9 @@ fetchKeys();
                   <span className="gc-text-desc-muted"> — usable across every workspace you belong to, now and in the future</span>
                 </span>
               </label>
-              <label className="gc-flex-row-gap-sm gc-radio-label">
+              <label htmlFor="key-scope-workspace" className="gc-flex-row-gap-sm gc-radio-label">
                 <input
+                  id="key-scope-workspace"
                   type="radio"
                   name="key-scope"
                   checked={scope === 'workspace'}
@@ -201,9 +204,10 @@ fetchKeys();
             </div>
 
             <div className="gc-field gc-flex-1">
-              <label className="gc-label">Expiration</label>
+              <label htmlFor="key-expiry" className="gc-label">Expiration</label>
               <div className="gc-flex-row-center">
                 <select
+                  id="key-expiry"
                   className="gc-select gc-flex-1"
                   value={expiryPreset}
                   onChange={(e) => setExpiryPreset(e.target.value)}
@@ -218,6 +222,7 @@ fetchKeys();
               {expiryPreset === 'custom' && (
                 <input
                   type="datetime-local"
+                  aria-label="Custom expiration date and time"
                   className="gc-input gc-mt-sm"
                   value={customExpiresAt}
                   onChange={(e) => setCustomExpiresAt(e.target.value)}
@@ -233,9 +238,10 @@ fetchKeys();
               ) : (
                 <div className="gc-ws-select-list">
                   {workspaces.map((ws) => (
-                    <label key={ws.id} className="gc-ws-select-row gc-cursor-pointer">
+                    <label htmlFor={`key-ws-${ws.id}`} key={ws.id} className="gc-ws-select-row gc-cursor-pointer">
                       <span className="gc-flex-row-gap-sm-min-w">
                         <input
+                          id={`key-ws-${ws.id}`}
                           type="checkbox"
                           checked={selectedWorkspaceIds.includes(ws.id)}
                           onChange={() => toggleWorkspace(ws.id)}

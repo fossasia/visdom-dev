@@ -46,8 +46,9 @@ const InviteMemberModal = ({ workspaceId, onClose, onInvited }) => {
 
       <form onSubmit={handleSubmit}>
         <div className="gc-field">
-          <label className="gc-label">Email Address</label>
+          <label htmlFor="member-email" className="gc-label">Email Address</label>
           <input
+            id="member-email"
             type="email"
             required
             autoFocus
@@ -59,8 +60,8 @@ const InviteMemberModal = ({ workspaceId, onClose, onInvited }) => {
         </div>
 
         <div className="gc-field">
-          <label className="gc-label">Role</label>
-          <select className="gc-select" value={role} onChange={(e) => setRole(e.target.value)}>
+          <label htmlFor="member-role" className="gc-label">Role</label>
+          <select id="member-role" className="gc-select" value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="admin">Admin</option>
             <option value="member">Member</option>
             <option value="viewer">Viewer</option>

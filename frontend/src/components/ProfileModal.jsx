@@ -118,33 +118,34 @@ const ProfileModal = ({ onClose }) => {
       {error && <div className="gc-form-error">{error}</div>}
 
       <div className="gc-field">
-        <label className="gc-label gc-mb-1">Email Address</label>
+        <div className="gc-label gc-mb-1">Email Address</div>
         <div className="gc-settings-value">{user?.email}</div>
       </div>
 
       <div className="gc-field">
-        <label className="gc-label gc-mb-1">Plan</label>
+        <div className="gc-label gc-mb-1">Plan</div>
         <div className="gc-settings-value">{planName(user?.tier)}</div>
       </div>
 
       {joined && (
         <div className="gc-field">
-          <label className="gc-label gc-mb-1">Member since</label>
+          <div className="gc-label gc-mb-1">Member since</div>
           <div className="gc-settings-value">{joined}</div>
         </div>
       )}
 
       {lastSignIn && (
         <div className="gc-field">
-          <label className="gc-label gc-mb-1">Last sign-in</label>
+          <div className="gc-label gc-mb-1">Last sign-in</div>
           <div className="gc-settings-value">{lastSignIn}</div>
         </div>
       )}
 
       <form onSubmit={handleSubmit}>
         <div className="gc-field">
-          <label className="gc-label">Username</label>
+          <label htmlFor="profile-username" className="gc-label gc-mb-1">Username</label>
           <input
+            id="profile-username"
             type="text"
             className="gc-input"
             value={username}
