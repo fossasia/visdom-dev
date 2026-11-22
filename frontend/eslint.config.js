@@ -23,6 +23,7 @@ export default defineConfig([
     },
     rules: {
       ...jsxA11y.flatConfigs.recommended.rules,
+      'jsx-a11y/label-has-associated-control': ['error', { depth: 4 }],
       'jsx-a11y/no-autofocus': 'off',
       'jsx-a11y/click-events-have-key-events': 'off',
       'jsx-a11y/no-static-element-interactions': 'off',
