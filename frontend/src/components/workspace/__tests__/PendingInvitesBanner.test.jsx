@@ -141,6 +141,7 @@ describe('PendingInvitesBanner', () => {
 
       await waitFor(() => {
         expect(acceptButtons[0]).not.toBeDisabled();
+        expect(declineButtons[0]).not.toBeDisabled();
       });
     });
 
@@ -157,6 +158,23 @@ describe('PendingInvitesBanner', () => {
 
       expect(mockToastError).toHaveBeenCalledWith('Invitation has expired or is invalid.');
       expect(defaultProps.onAccepted).not.toHaveBeenCalled();
+      expect(acceptButtons[0]).not.toBeDisabled();
+      expect(screen.getAllByTitle('Decline invite')[0]).not.toBeDisabled();
+    });
+
+    it('displays fallback error toast and re-enables buttons when accept request fails without error details', async () => {
+      const user = userEvent.setup();
+      mockPost.mockRejectedValueOnce(new Error('Network failure'));
+
+      renderBanner();
+
+      const acceptButtons = screen.getAllByTitle('Accept invite');
+      await user.click(acceptButtons[0]);
+
+      expect(mockToastError).toHaveBeenCalledWith('Failed to accept invite.');
+      expect(defaultProps.onAccepted).not.toHaveBeenCalled();
+      expect(acceptButtons[0]).not.toBeDisabled();
+      expect(screen.getAllByTitle('Decline invite')[0]).not.toBeDisabled();
     });
   });
 
@@ -226,9 +244,14 @@ describe('PendingInvitesBanner', () => {
       expect(acceptButtons[0]).toBeDisabled();
       expect(declineButtons[0]).toBeDisabled();
 
+      // other workspace buttons remain enabled
+      expect(acceptButtons[1]).not.toBeDisabled();
+      expect(declineButtons[1]).not.toBeDisabled();
+
       resolveApi({ data: { ok: true } });
 
       await waitFor(() => {
+        expect(acceptButtons[0]).not.toBeDisabled();
         expect(declineButtons[0]).not.toBeDisabled();
       });
     });
@@ -247,6 +270,24 @@ describe('PendingInvitesBanner', () => {
 
       expect(mockToastError).toHaveBeenCalledWith('Permission denied.');
       expect(defaultProps.onDeclined).not.toHaveBeenCalled();
+      expect(screen.getAllByTitle('Accept invite')[0]).not.toBeDisabled();
+      expect(declineButtons[0]).not.toBeDisabled();
+    });
+
+    it('displays fallback error toast and re-enables buttons when decline request fails without error details', async () => {
+      const user = userEvent.setup();
+      mockConfirm.mockResolvedValueOnce(true);
+      mockDelete.mockRejectedValueOnce(new Error('Network failure'));
+
+      renderBanner();
+
+      const declineButtons = screen.getAllByTitle('Decline invite');
+      await user.click(declineButtons[0]);
+
+      expect(mockToastError).toHaveBeenCalledWith('Failed to decline invite.');
+      expect(defaultProps.onDeclined).not.toHaveBeenCalled();
+      expect(screen.getAllByTitle('Accept invite')[0]).not.toBeDisabled();
+      expect(declineButtons[0]).not.toBeDisabled();
     });
   });
 });
