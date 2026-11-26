@@ -42,7 +42,7 @@ describe('SuspendedBanner', () => {
         is_active: false,
       };
 
-      render(<SuspendedBanner workspace={suspendedWorkspace} />);
+      const { container } = render(<SuspendedBanner workspace={suspendedWorkspace} />);
 
       expect(screen.getByText(/Bioinformatics Lab is suspended/)).toBeInTheDocument();
       expect(
@@ -50,6 +50,8 @@ describe('SuspendedBanner', () => {
           /Nothing has been deleted\. Its plots and members are all still here, but it cannot be opened or written to until an administrator lifts the suspension\. Contact one if you were not expecting this\./
         )
       ).toBeInTheDocument();
+      const icon = container.querySelector('.gc-panel-title svg');
+      expect(icon).toBeInTheDocument();
     });
   });
 });

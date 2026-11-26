@@ -53,7 +53,7 @@ describe('RetentionBanner', () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it('renders singular environment heading when exactly one environment is expiring', () => {
+    it('renders singular environment heading and clock icon when exactly one environment is expiring', () => {
       const singleNotice = {
         state: 'active',
         days: 30,
@@ -62,11 +62,13 @@ describe('RetentionBanner', () => {
         expiring: ['train-run-1'],
       };
 
-      render(<RetentionBanner workspace={sampleWorkspace} notice={singleNotice} />);
+      const { container } = render(<RetentionBanner workspace={sampleWorkspace} notice={singleNotice} />);
 
       expect(screen.getByText(/1 environment in Vision Lab will be removed soon/)).toBeInTheDocument();
       expect(screen.getByText('train-run-1')).toBeInTheDocument();
       expect(screen.queryByText(/and \d+ more/)).not.toBeInTheDocument();
+      const icon = container.querySelector('.gc-panel-title svg');
+      expect(icon).toBeInTheDocument();
     });
 
     it('renders plural environments heading when multiple environments are expiring', () => {
