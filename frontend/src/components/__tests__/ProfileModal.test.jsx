@@ -132,6 +132,7 @@ describe('ProfileModal', () => {
       await act(() => vi.advanceTimersByTimeAsync(1));
       expect(mocks.api.get).toHaveBeenCalledExactlyOnceWith('/auth/username-availability', {
         params: { username: 'alice_new' },
+        signal: expect.any(AbortSignal),
       });
       expect(screen.getByText('Available')).toBeInTheDocument();
 
@@ -162,6 +163,25 @@ describe('ProfileModal', () => {
 
       expect(screen.getByRole('button', { name: 'Save Username' })).toBeDisabled();
       expect(mocks.api.patch).not.toHaveBeenCalled();
+    });
+
+    it('displays error and allows retry when availability check fails (#58)', async () => {
+      const user = userEvent.setup();
+      mocks.api.get.mockRejectedValue(new Error('offline'));
+      renderProfile();
+
+      await enterUsername(user, 'alice_new');
+      expect(await screen.findByText('Could not check availability.')).toBeInTheDocument();
+      expect(screen.queryByText('Already taken')).not.toBeInTheDocument();
+
+      const retryBtn = screen.getByRole('button', { name: 'Retry' });
+      expect(retryBtn).toBeInTheDocument();
+
+      mocks.api.get.mockResolvedValueOnce({ data: { available: true } });
+      await user.click(retryBtn);
+
+      expect(await screen.findByText('Available')).toBeInTheDocument();
+      expect(screen.queryByText('Could not check availability.')).not.toBeInTheDocument();
     });
 
     it('disables saving while the username update is pending', async () => {
