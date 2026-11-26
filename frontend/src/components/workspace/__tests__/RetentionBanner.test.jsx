@@ -79,6 +79,22 @@ describe('RetentionBanner', () => {
       expect(screen.queryByText(/and \d+ more/)).not.toBeInTheDocument();
     });
 
+    it('displays all environments without truncation when count equals display limit of 5', () => {
+      const fiveNotice = {
+        state: 'active',
+        days: 30,
+        warn_days: 7,
+        plan: 'Team',
+        expiring: ['env-1', 'env-2', 'env-3', 'env-4', 'env-5'],
+      };
+
+      render(<RetentionBanner workspace={sampleWorkspace} notice={fiveNotice} />);
+
+      expect(screen.getByText(/5 environments in Vision Lab will be removed soon/)).toBeInTheDocument();
+      expect(screen.getByText('env-1, env-2, env-3, env-4, env-5')).toBeInTheDocument();
+      expect(screen.queryByText(/and \d+ more/)).not.toBeInTheDocument();
+    });
+
     it('displays retention summary and warning days heading for active notices', () => {
       render(<RetentionBanner workspace={sampleWorkspace} notice={sampleActiveNotice} />);
 
