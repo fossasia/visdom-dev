@@ -19,12 +19,15 @@ describe('RetentionBanner', () => {
   };
 
   describe('what it shows', () => {
-    it('returns null when workspace is null or undefined', () => {
+    it('returns null when workspace is null, undefined, or omitted', () => {
       const { container: containerNull } = render(<RetentionBanner workspace={null} notice={sampleActiveNotice} />);
       expect(containerNull.firstChild).toBeNull();
 
       const { container: containerUndef } = render(<RetentionBanner workspace={undefined} notice={sampleActiveNotice} />);
       expect(containerUndef.firstChild).toBeNull();
+
+      const { container: containerOmitted } = render(<RetentionBanner notice={sampleActiveNotice} />);
+      expect(containerOmitted.firstChild).toBeNull();
     });
 
     it('returns null when notice is null or undefined', () => {

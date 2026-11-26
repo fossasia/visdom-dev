@@ -6,12 +6,15 @@ import SuspendedBanner from '../SuspendedBanner';
 
 describe('SuspendedBanner', () => {
   describe('what it shows', () => {
-    it('returns null when workspace is null or undefined', () => {
+    it('returns null when workspace is null, undefined, or omitted', () => {
       const { container: containerNull } = render(<SuspendedBanner workspace={null} />);
       expect(containerNull.firstChild).toBeNull();
 
       const { container: containerUndef } = render(<SuspendedBanner workspace={undefined} />);
       expect(containerUndef.firstChild).toBeNull();
+
+      const { container: containerOmitted } = render(<SuspendedBanner />);
+      expect(containerOmitted.firstChild).toBeNull();
     });
 
     it('returns null when workspace is active (is_active is true)', () => {
