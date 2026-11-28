@@ -1,0 +1,146 @@
+/* Copyright 2017-present, The Visdom Authors */
+.site-layout {
+  --site-gutter: clamp(16px, 5vw, 88px);
+  font-family: var(--pub-font);
+  --font-sans: var(--pub-font);
+  background: var(--pub-paper);
+  color: var(--pub-ink);
+  min-height: 100vh;
+}
+.site-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--site-gutter);
+  background: var(--pub-white);
+  border-bottom: 1px solid var(--pub-rule);
+  position: relative;
+  z-index: 5;
+}
+.site-sticky { position: sticky; top: 0; }
+.site-brand, .site-links a, .site-menu, .site-footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  color: inherit;
+  text-decoration: none;
+}
+.site-brand { gap: 8px; font-size: 24px; font-weight: 730; letter-spacing: -.045em; }
+.site-brand img { border-radius: 5px; }
+.site-links { display: flex; align-items: center; gap: clamp(12px, 2vw, 32px); }
+.site-links a, .site-menu { font-size: 14px; font-weight: 600; }
+.site-links a:hover, .site-footer a:hover { text-decoration: underline; }
+.site-links .site-primary { padding: 0 17px; background: var(--pub-blue); color: var(--pub-white); border-radius: 4px; }
+.site-menu {
+  display: none;
+  gap: 8px;
+  cursor: pointer;
+  background: var(--pub-white);
+  border: 1px solid var(--pub-rule);
+  border-radius: 4px;
+  padding: 0 12px;
+}
+.site-header dialog { inset: 6px var(--site-gutter) auto auto; padding: 0; margin: 0; border: 1px solid var(--pub-rule); border-radius: 6px; width: min(320px, calc(100% - 32px)); color: inherit; }
+.site-header dialog::backdrop { background: color-mix(in srgb, var(--pub-night) 45%, transparent); }
+.site-menu-inner { padding: 12px; display: grid; justify-items: end; gap: 8px; }
+.site-menu-inner nav { display: grid; gap: 2px; width: 100%; }
+.site-menu-inner a { padding: 0 16px; }
+.site-layout :is(input, button, textarea, select) { font-family: inherit; }
+.site-layout:has(.site-sticky) :is(a, button, select, [tabindex]) { scroll-margin-block: 72px 12px; }
+.site-links .site-primary:hover { background: var(--pub-blue-deep); }
+.site-footer {
+  padding: clamp(32px, 4vw, 72px) var(--site-gutter) 0;
+  background: var(--pub-night);
+  color: var(--pub-light-ink);
+}
+.site-footer-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(6px, 2vw, 36px);
+  padding-bottom: 24px;
+}
+.site-footer h2 { margin: 0 0 7px; color: var(--pub-light-muted); font-size: 15px; }
+.site-footer section { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.site-footer a { max-width: 100%; font-size: 14px; overflow-wrap: anywhere; }
+.site-colophon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  border-top: 1px solid var(--pub-control-border);
+  padding-block: 12px;
+  font-size: 14px;
+}
+.site-colophon a { text-decoration: underline; text-underline-offset: 3px; }
+.site-wordmark {
+  display: block;
+  width: 100%;
+  height: auto;
+  fill: var(--pub-light-muted);
+  font-size: 224px;
+  font-weight: 700;
+  letter-spacing: -.065em;
+}
+@supports (clip-path: url("#letters")) and (color: color-mix(in srgb, black, white)) {
+  .site-wordmark-plots { display: inline; }
+}
+.site-layout :focus-visible { outline: 3px solid var(--pub-blue); outline-offset: 2px; }
+.site-footer :focus-visible { outline-color: var(--pub-mint); }
+.site-layout .auth-wrapper {
+  min-height: calc(100svh - 60px);
+  padding: clamp(20px, 4vw, 64px) var(--site-gutter);
+  background: var(--pub-ice);
+}
+.site-layout .auth-panel {
+  --text-primary: var(--pub-ink);
+  --text-secondary: var(--pub-muted);
+  --text-muted: var(--pub-muted);
+  --vc-text-muted: var(--pub-muted);
+  --danger-bg: var(--pub-red);
+  --success-bg: var(--pub-green);
+  --btn-border: var(--pub-control-border);
+  --panel-border: var(--pub-rule);
+  --panel-bg: var(--pub-white);
+  min-width: 0;
+  box-shadow: none;
+}
+.site-layout .auth-panel :is(input, button, a), .site-layout .gc-legal a { min-height: 44px; min-width: 44px; }
+.site-layout :is(.auth-panel, .gc-legal) a { display: inline-flex; align-items: center; }
+.site-layout .auth-panel .visdom-logo { color: var(--pub-blue); }
+.site-layout .pw-field-input { padding-right: 52px; }
+.site-layout .pw-field-toggle { width: 44px; }
+.auth-title { margin: 0; color: var(--pub-ink); font-size: clamp(19px, 2vw, 24px); line-height: 1.2; }
+
+.site-layout .gc-legal-wrapper {
+  min-height: calc(100svh - 60px);
+  padding: clamp(36px, 5vw, 88px) var(--site-gutter);
+  background: var(--pub-paper);
+}
+.site-layout .gc-legal {
+  max-width: 70ch;
+  padding: 0;
+  margin: 0 auto;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--pub-ink);
+  font-size: clamp(16px, 1.1vw, 18px);
+  overflow-wrap: anywhere;
+}
+.site-layout .gc-legal-title { margin: 0; color: inherit; font-size: clamp(38px, 5vw, 72px); line-height: 1.05; letter-spacing: -.045em; }
+.site-layout .gc-legal-updated { margin: 14px 0 36px; padding-bottom: 24px; border-bottom: 1px solid var(--pub-rule); color: var(--pub-muted); font-size: 14px; }
+.site-layout .gc-legal-heading { margin: 32px 0 10px; color: inherit; font-size: clamp(20px, 2vw, 27px); line-height: 1.17; letter-spacing: -.025em; }
+.site-layout .gc-legal-text { margin: 12px 0; color: inherit; font-size: inherit; line-height: 1.58; }
+.site-layout .gc-legal a { color: var(--pub-blue); text-decoration: underline; text-underline-offset: .16em; }
+
+@media (max-width: 767px) {
+  .site-header > nav { display: none; }
+  .site-menu { display: inline-flex; }
+  .site-footer-links { grid-template-columns: minmax(0, .88fr) minmax(0, 1.35fr) minmax(0, .71fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

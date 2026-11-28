@@ -1,0 +1,35 @@
+/* Copyright 2017-present, The Visdom Authors */
+
+:where(.site-layout, .st-page, #root:has(.site-layout) ~ .visdom-toast-container) {
+  --pub-blue: #20598b;
+  --pub-blue-deep: #16416a;
+  --pub-green: #216449;
+  --pub-cyan: #006e86;
+  --pub-teal: #12645f;
+  --pub-raspberry: #a3245a;
+  --pub-red: #b21f2d;
+  --pub-ink: #172a32;
+  --pub-muted: #455c63;
+  --pub-night: #152c33;
+  --pub-dark-teal: #184c4a;
+  --pub-paper: #f8faf8;
+  --pub-white: #fff;
+  --pub-mint: #e7f3ed;
+  --pub-ice: #e7f1f7;
+  --pub-red-tint: #fcebed;
+  --pub-rule: #c9d6d5;
+  --pub-control-border: #71898c;
+  --pub-light-ink: #e5f1f0;
+  --pub-light-muted: #bad1d1;
+  --pub-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --pub-mono: ui-monospace, monospace;
+}
+
+#root:has(.site-layout) ~ .visdom-toast-container {
+  .visdom-toast-info { color: var(--pub-blue); background-color: var(--pub-ice); }
+  .visdom-toast-success { color: var(--pub-green); background-color: var(--pub-mint); }
+  .visdom-toast-pill.visdom-toast-success { border-color: var(--pub-green); }
+  .visdom-toast-warning { color: var(--pub-raspberry); background-color: var(--pub-paper); }
+  .visdom-toast-error { color: var(--pub-red); background-color: var(--pub-red-tint); }
+  .visdom-toast-progress { background: currentColor; opacity: 0.7; }
+}
