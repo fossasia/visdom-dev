@@ -55,6 +55,7 @@ describe('SuspendedBanner', () => {
       ).toBeInTheDocument();
       const icon = container.querySelector('.gc-panel-title svg');
       expect(icon).toBeInTheDocument();
+      expect(icon).toHaveClass('lucide-triangle-alert');
     });
   });
 });

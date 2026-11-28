@@ -72,6 +72,7 @@ describe('RetentionBanner', () => {
       expect(screen.queryByText(/and \d+ more/)).not.toBeInTheDocument();
       const icon = container.querySelector('.gc-panel-title svg');
       expect(icon).toBeInTheDocument();
+      expect(icon).toHaveClass('lucide-clock');
     });
 
     it('renders plural environments heading when multiple environments are expiring', () => {
