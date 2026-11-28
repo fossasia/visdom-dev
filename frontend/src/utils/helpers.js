@@ -17,7 +17,7 @@ export const parseApiError = (err, defaultMsg = 'An error occurred.') => {
   return defaultMsg;
 };
 
-const PROXIED_PREFIX = '/vis/';
+export const isAdminTarget = (path) => path === '/admin' || path.startsWith('/admin/');
 
 const isSameOriginPath = (path) => /^\/(?![/\\])/.test(path);
 
@@ -28,7 +28,7 @@ export const resolvePostAuthTarget = (location) => {
 };
 
 export const redirectAfterAuth = (target, navigate) => {
-  if (target.startsWith(PROXIED_PREFIX)) {
+  if (target.startsWith('/vis/') || isAdminTarget(target)) {
     window.location.assign(target);
     return;
   }

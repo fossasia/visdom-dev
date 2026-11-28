@@ -221,17 +221,11 @@ class AdminAction(Base):
 
 
 class AdminUser(Base):
-    """A FOSSASIA staff account for the admin panel.
-
-    Deliberately separate from User: admin access never rides on a normal user
-    session, so a compromised user account cannot reach it.
-    """
-
     __tablename__ = "admin_users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), unique=True)
     role = Column(String, nullable=False, default="support", server_default="support")
     is_active = Column(Boolean, default=True, nullable=False, server_default="true")
     created_at = Column(DateTime(timezone=True), default=utcnow)

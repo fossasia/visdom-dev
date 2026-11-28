@@ -8,7 +8,7 @@ import uuid
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app import account_deletion, invites, password_reset, payments
 from app import email as outbound
 from app.admin.activity import evict_workspace
+from app.admin.identity import active_staff
 from app.config import settings
 from app.dependencies import (
     commit_or_conflict,
@@ -41,6 +42,7 @@ from app.schemas import (
     UserCreate,
     UsernameAvailabilityResponse,
     UsernameUpdate,
+    UserProfile,
     UserResponse,
 )
 from app.security import (
@@ -312,7 +314,7 @@ def _clear_session_cookies(response: Response) -> None:
 
 
 @router.post("/logout")
-def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+def logout(request: Request, response: Response, db: Session = Depends(get_db), return_to_login: bool = False):
     """Clears the session cookies and revokes the tokens already issued.
 
     Bumping `token_version` is what actually ends the session, since every path
@@ -337,6 +339,10 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
         _clear_session_cookies(response)
         return response
 
+    if return_to_login:
+        response = RedirectResponse("/login", status_code=303)
+        _clear_session_cookies(response)
+        return response
     _clear_session_cookies(response)
     return {"detail": "Successfully logged out"}
 
@@ -434,10 +440,11 @@ def verify_session(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/me", response_model=UserResponse)
-def get_user_profile(current_user: User = Depends(get_current_user)):
+@router.get("/me", response_model=UserProfile)
+def get_user_profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Returns the current authenticated user's profile info."""
-    return current_user
+    profile = UserResponse.model_validate(current_user).model_dump()
+    return {**profile, "has_staff_access": settings.ADMIN_ENABLED and active_staff(db, current_user.id) is not None}
 
 @router.get("/key-check")
 def check_api_key(
@@ -516,6 +523,8 @@ def request_account_deletion(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="That is not your password.",
         )
+    if active_staff(db, current_user.id):
+        raise HTTPException(status_code=409, detail="Stop staff access before deleting this account.")
     preview = _preview(db, current_user)
     if preview["blockers"]:
         names = ", ".join(ws.name for ws in preview["blockers"])

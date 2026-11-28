@@ -11,10 +11,11 @@ import uuid
 import pytest
 from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
+from staff_accounts import create_staff, use_session
 from starlette.testclient import TestClient
 
 from app.admin import panel
-from app.models import AdminUser, APIKey, Membership, User, Workspace, WorkspaceInvite
+from app.models import APIKey, Membership, User, Workspace, WorkspaceInvite
 from app.security import get_password_hash
 
 PAGES = [
@@ -41,15 +42,7 @@ def staff_panel(db_session, monkeypatch):
 
     staff_db = staff_sessions()
     for email, role in (("staff@example.com", "superadmin"), ("viewer@example.com", "viewer")):
-        staff_db.add(
-            AdminUser(
-                id=uuid.uuid4(),
-                email=email,
-                password_hash=get_password_hash("staffpassword"),
-                role=role,
-                is_active=True,
-            )
-        )
+        create_staff(staff_db, email, role)
     owner = User(
         id=uuid.uuid4(),
         email="owner@example.com",
@@ -78,12 +71,7 @@ def staff_panel(db_session, monkeypatch):
     with TestClient(app) as client:
 
         def sign_in(email):
-            answer = client.post(
-                "/admin/login",
-                data={"username": email, "password": "staffpassword"},
-                follow_redirects=False,
-            )
-            assert answer.status_code in (302, 303), answer.text
+            use_session(client, staff_db, email)
             return client
 
         sign_in.workspace_id = workspace.id
@@ -136,23 +124,14 @@ def test_overview_links_follow_where_the_panel_is_mounted(db_session, monkeypatc
     monkeypatch.setattr(panel, "SessionLocal", staff_sessions)
     monkeypatch.setattr(panel, "engine", engine)
     db = staff_sessions()
-    db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email="boss@example.com",
-            password_hash=get_password_hash("staffpassword"),
-            role="superadmin",
-            is_active=True,
-        )
-    )
-    db.commit()
-    db.close()
+    create_staff(db, "boss@example.com", "superadmin")
 
     app = FastAPI()
     panel.mount_admin(app, secret_key="test-secret-for-the-admin-session", base_url="/staff")
     with TestClient(app) as client:
-        client.post("/staff/login", data={"username": "boss@example.com", "password": "staffpassword"})
+        use_session(client, db, "boss@example.com")
         page = client.get("/staff/", follow_redirects=False)
     assert page.status_code == 200
+    db.close()
     assert "/staff/user/list" in page.text
     assert "/admin/user/list" not in page.text

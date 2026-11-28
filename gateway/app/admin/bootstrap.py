@@ -4,49 +4,40 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Creates or updates a staff account.
-
-    python -m app.admin.bootstrap someone@fossasia.org superadmin
-"""
-
-import getpass
 import sys
 
 from app.admin import roles
+from app.admin.identity import confirmed_user
 from app.database import SessionLocal
 from app.models import AdminUser
-from app.security import get_password_hash
 
 
 def main(argv):
-    if len(argv) != 2:
-        sys.exit("usage: python -m app.admin.bootstrap <email> <%s>" % "|".join(roles.ROLES))
-    email, role = argv[0].strip().lower(), argv[1].strip()
-    if not roles.is_valid(role):
+    if len(argv) not in (2, 3):
+        sys.exit("usage: python -m app.admin.bootstrap <email> <confirmed-user-id> [role]")
+    email, user_id = argv[0].strip().lower(), argv[1]
+    role = argv[2] if len(argv) == 3 else None
+    if role is not None and not roles.is_valid(role):
         sys.exit("role must be one of: %s" % ", ".join(roles.ROLES))
 
-    password = getpass.getpass("password: ")
-    if len(password) < 12:
-        sys.exit("password must be at least 12 characters")
-    if password != getpass.getpass("confirm: "):
-        sys.exit("passwords did not match")
-
-    db = SessionLocal()
-    try:
-        admin = db.query(AdminUser).filter(AdminUser.email == email).first()
+    with SessionLocal() as db:
+        user = confirmed_user(db, user_id, email)
+        if user is None:
+            sys.exit("No active dashboard account matches that ID and email.")
+        admin = db.query(AdminUser).filter_by(email=email).with_for_update().one_or_none()
         if admin is None:
-            admin = AdminUser(email=email, role=role, password_hash=get_password_hash(password))
+            if role is None:
+                sys.exit("Choose a role for the new staff member.")
+            admin = AdminUser(email=email, role=role)
             db.add(admin)
-            action = "created"
-        else:
+        elif admin.user_id not in (None, user.id):
+            sys.exit("This staff record already belongs to another dashboard account.")
+        if role is not None:
             admin.role = role
-            admin.password_hash = get_password_hash(password)
             admin.is_active = True
-            action = "updated"
+        admin.user_id = user.id
         db.commit()
-        print("%s %s as %s" % (action, email, role))
-    finally:
-        db.close()
+        print(f"Linked {email} as {admin.role}.")
 
 
 if __name__ == "__main__":

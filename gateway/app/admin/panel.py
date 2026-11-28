@@ -4,14 +4,12 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""The staff admin panel, mounted on its own route with its own login."""
+"""The staff admin panel, mounted on its own route."""
 
 import asyncio
 import base64
-import functools
 import logging
 import os
-import secrets
 import time
 import uuid
 from typing import get_args
@@ -29,8 +27,10 @@ from starlette.responses import RedirectResponse, Response
 from app import billing, bypass
 from app.admin import activity, janitor, permissions, roles, wording
 from app.admin.audit import StaffAuditBackend, remember
+from app.admin.identity import active_staff, confirmed_user
 from app.config import settings
 from app.database import SessionLocal, engine
+from app.dependencies import user_for_access_token
 from app.models import (
     AdminAction,
     AdminUser,
@@ -45,7 +45,7 @@ from app.models import (
     utcnow,
 )
 from app.schemas.workspace import RoleLiteral
-from app.security import get_password_hash, verify_password
+from app.security import get_password_hash
 
 SESSION_KEY = "admin_user"
 ROLE_KEY = "admin_role"
@@ -56,66 +56,45 @@ MIN_SET_PASSWORD = 12
 DANGEROUS_ENVIRONMENTS = ("prod", "production", "live")
 
 
-@functools.lru_cache(maxsize=1)
-def _placeholder_hash():
-    """A hash no password matches, checked when there is no account to check.
+class StaffPanel(Admin):
+    async def login(self, request: Request):
+        return RedirectResponse(request.url_for("admin:index").path, status_code=303)
 
-    Refusing an unknown email then costs the same as refusing a wrong password,
-    so the time a sign-in takes does not say which emails are staff accounts.
-    """
-    return get_password_hash(secrets.token_urlsafe(32))
+    async def logout(self, request: Request):
+        return await self.templates.TemplateResponse(request, "sqladmin/sign_out.html")
 
 
 class StaffAuth(AuthenticationBackend):
     def __init__(self, secret_key, path="/admin"):
         super().__init__(secret_key=secret_key, https_only=settings.COOKIE_SECURE, path=path)
 
-    async def login(self, request: Request) -> bool:
-        form = await request.form()
-        email = (form.get("username") or "").strip().lower()
-        password = form.get("password") or ""
-        db = SessionLocal()
-        try:
-            admin = db.query(AdminUser).filter(AdminUser.email == email).first()
-            known = admin is not None and admin.is_active
-            matches = verify_password(password, admin.password_hash if known else _placeholder_hash())
-            if not (known and matches):
-                logging.info("admin login refused for %s", email)
-                return False
-            admin.last_login_at = utcnow()
-            db.commit()
-            request.session.update(
-                {SESSION_KEY: str(admin.id), ROLE_KEY: admin.role, EMAIL_KEY: admin.email}
-            )
-            logging.info("admin login for %s as %s", email, admin.role)
-            return True
-        finally:
-            db.close()
-
-    async def logout(self, request: Request) -> bool:
-        request.session.clear()
-        return True
-
     async def authenticate(self, request: Request):
-        admin_id = request.session.get(SESSION_KEY)
-        if not admin_id:
-            return RedirectResponse(request.url_for("admin:login"), status_code=302)
-        try:
-            admin_key = uuid.UUID(str(admin_id))
-        except ValueError:
-            request.session.clear()
-            return RedirectResponse(request.url_for("admin:login"), status_code=302)
-        db = SessionLocal()
-        try:
-            admin = db.query(AdminUser).filter(AdminUser.id == admin_key).first()
-            if admin is None or not admin.is_active:
+        with SessionLocal() as db:
+            user = user_for_access_token(db, request.cookies.get("session_token"))
+            if user is None:
                 request.session.clear()
-                return RedirectResponse(request.url_for("admin:login"), status_code=302)
-            request.session[ROLE_KEY] = admin.role
-            request.session[EMAIL_KEY] = admin.email
-            request.session[permissions.GRANTS_KEY] = permissions.held_by(db, admin)
-        finally:
-            db.close()
+                target = request.url_for("admin:index").path
+                if request.method == "GET":
+                    target = request.url.path
+                    if request.url.query:
+                        target += "?" + request.url.query
+                return RedirectResponse("/login?" + urlencode({"next": target}), status_code=303)
+
+            admin = active_staff(db, user.id)
+            if not user.is_active or user.trashed_at or user.deletion_requested_at or admin is None:
+                request.session.clear()
+                raise HTTPException(status_code=403, detail="Staff access is required.")
+
+            if request.session.get(SESSION_KEY) != str(admin.id):
+                request.session.clear()
+                admin.last_login_at = utcnow()
+                db.commit()
+            request.session.update({
+                SESSION_KEY: str(admin.id),
+                ROLE_KEY: admin.role,
+                EMAIL_KEY: admin.email,
+                permissions.GRANTS_KEY: permissions.held_by(db, admin),
+            })
         return True
 
 
@@ -302,6 +281,9 @@ class UserAdmin(ChangeableView, model=User):
         if not chosen:
             data.pop("password_hash", None)
         await super().on_model_change(data, model, is_created, request)
+        if data.get("is_active") is False and model.is_active:
+            if active_staff(object_session(model), model.id):
+                raise HTTPException(status_code=400, detail="Stop this person's staff access first.")
         if chosen:
             data["password_hash"] = get_password_hash(chosen)
             model.token_version = (model.token_version or 0) + 1
@@ -792,7 +774,11 @@ def _other_active_superadmins(db, admin):
     """
     superadmins = (
         db.query(AdminUser)
+        .join(User, User.id == AdminUser.user_id)
         .filter(
+            User.is_active.is_(True),
+            User.deletion_requested_at.is_(None),
+            User.trashed_at.is_(None),
             AdminUser.role == roles.SUPERADMIN,
             AdminUser.is_active.is_(True),
         )
@@ -832,23 +818,18 @@ class AdminUserAdmin(RoleScopedView, model=AdminUser):
         AdminUser.created_at: _to_the_minute("created_at"),
         AdminUser.last_login_at: _to_the_minute("last_login_at", "never"),
     }
-    column_details_exclude_list = [AdminUser.password_hash]
-    form_columns = [
-        AdminUser.email,
-        AdminUser.role,
-        AdminUser.password_hash,
-        AdminUser.is_active,
-    ]
-    form_create_rules = ["email", "role", "password_hash"]
+    form_include_pk = True
+    form_columns = [AdminUser.email, AdminUser.role, AdminUser.user_id, AdminUser.is_active]
+    form_create_rules = ["email", "role", "user_id"]
     form_edit_rules = ["is_active"]
-    form_overrides = {"role": wtforms.SelectField, "password_hash": wtforms.PasswordField}
+    form_overrides = {"role": wtforms.SelectField}
     form_args = {
         "email": {"validators": [wtforms.validators.Email()]},
         "role": {"choices": [(name, name) for name in roles.ROLES]},
-        "password_hash": {
-            "label": "Password",
-            "description": f"At least {MIN_SET_PASSWORD} characters. Shown to nobody after this.",
-            "validators": [wtforms.validators.Length(min=MIN_SET_PASSWORD)],
+        "user_id": {
+            "label": "Dashboard account ID",
+            "description": "Confirm this ID directly with the staff member before granting access.",
+            "validators": [wtforms.validators.DataRequired()],
         },
     }
 
@@ -883,16 +864,12 @@ class AdminUserAdmin(RoleScopedView, model=AdminUser):
                 detail="Role must be one of: %s." % ", ".join(roles.ROLES),
             )
 
-        password = data.get("password_hash") or ""
-        if len(password) < MIN_SET_PASSWORD:
-            raise HTTPException(
-                status_code=400,
-                detail=f"The password must be at least {MIN_SET_PASSWORD} characters.",
-            )
-        data["password_hash"] = get_password_hash(password)
-
         db = SessionLocal()
         try:
+            user = confirmed_user(db, data.get("user_id"), data["email"])
+            if user is None:
+                raise HTTPException(status_code=400, detail="No active dashboard account matches that ID and email.")
+            data["user_id"] = user.id
             taken = (
                 db.query(AdminUser).filter(AdminUser.email == data["email"]).first()
             )
@@ -1577,7 +1554,7 @@ def _favicon_data_uri():
 
 def mount_admin(app, secret_key, base_url="/admin"):
     """Attach the admin panel to a FastAPI app."""
-    admin = Admin(
+    admin = StaffPanel(
         app=app,
         engine=engine,
         base_url=base_url,

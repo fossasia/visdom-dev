@@ -5,10 +5,10 @@ import uuid
 import pytest
 from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
+from staff_accounts import create_staff, use_session
 from starlette.testclient import TestClient
 
 from app.admin import panel
-from app.models import AdminUser
 from app.security import get_password_hash
 
 
@@ -21,26 +21,12 @@ def admin_client(db_session, monkeypatch):
     monkeypatch.setattr(panel, "engine", engine)
 
     staff_db = staff_sessions()
-    staff_db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email="staff@example.com",
-            password_hash=get_password_hash("staffpassword"),
-            role="superadmin",
-            is_active=True,
-        )
-    )
-    staff_db.commit()
+    create_staff(staff_db, "staff@example.com", "superadmin")
 
     app = FastAPI()
     panel.mount_admin(app, secret_key="test-secret-for-the-admin-session")
     with TestClient(app) as client:
-        signed_in = client.post(
-            "/admin/login",
-            data={"username": "staff@example.com", "password": "staffpassword"},
-            follow_redirects=False,
-        )
-        assert signed_in.status_code in (302, 303), signed_in.text
+        use_session(client, staff_db, "staff@example.com")
         client.staff_db = staff_db
         yield client
     staff_db.close()
@@ -74,17 +60,8 @@ def _bypass_post(admin_client, **form):
 def _sign_in_as(admin_client, role):
     email = f"{role}-bypass@example.com"
     db = admin_client.staff_db
-    db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email=email,
-            password_hash=get_password_hash("their-staff-password"),
-            role=role,
-            is_active=True,
-        )
-    )
-    db.commit()
-    admin_client.post("/admin/login", data={"username": email, "password": "their-staff-password"})
+    create_staff(db, email, role)
+    use_session(admin_client, admin_client.staff_db, email)
 
 
 def test_bypassing_limits_for_everyone_is_recorded_and_said_on_every_page(admin_client):

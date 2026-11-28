@@ -41,6 +41,10 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserProfile(UserResponse):
+    has_staff_access: bool
+
+
 class UsernameUpdate(BaseModel):
     username: str = Field(..., pattern=USERNAME_PATTERN)
 

@@ -4,11 +4,11 @@ import uuid
 import pytest
 from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
+from staff_accounts import create_staff, use_session
 from starlette.testclient import TestClient
 
 from app.admin import panel
-from app.models import AdminUser, SharedLink, Workspace
-from app.security import get_password_hash
+from app.models import SharedLink, Workspace
 
 
 @pytest.fixture
@@ -20,15 +20,7 @@ def staff(db_session, monkeypatch):
     monkeypatch.setattr(panel, "engine", engine)
 
     staff_db = staff_sessions()
-    staff_db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email="staff@example.com",
-            password_hash=get_password_hash("staffpassword"),
-            role="superadmin",
-            is_active=True,
-        )
-    )
+    create_staff(staff_db, "staff@example.com", "superadmin")
     workspace = Workspace(id=uuid.uuid4(), name="Shared", slug="shared-links-page")
     link = SharedLink(id=uuid.uuid4(), workspace_id=workspace.id, role="member")
     staff_db.add_all([workspace, link])
@@ -37,12 +29,7 @@ def staff(db_session, monkeypatch):
     app = FastAPI()
     panel.mount_admin(app, secret_key="test-secret-for-the-admin-session")
     with TestClient(app) as client:
-        signed_in = client.post(
-            "/admin/login",
-            data={"username": "staff@example.com", "password": "staffpassword"},
-            follow_redirects=False,
-        )
-        assert signed_in.status_code in (302, 303), signed_in.text
+        use_session(client, staff_db, "staff@example.com")
         client.link_id = str(link.id)
         yield client
     staff_db.close()

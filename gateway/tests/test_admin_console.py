@@ -9,10 +9,11 @@ import uuid
 import pytest
 from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
+from staff_accounts import create_staff, use_session
 from starlette.testclient import TestClient
 
 from app.admin import panel
-from app.models import AdminUser, Workspace
+from app.models import AdminUser, User, Workspace
 from app.security import get_password_hash
 
 PAGES = [
@@ -48,26 +49,12 @@ def admin_client(db_session, monkeypatch):
     monkeypatch.setattr(panel, "engine", engine)
 
     staff_db = staff_sessions()
-    staff_db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email="staff@example.com",
-            password_hash=get_password_hash("staffpassword"),
-            role="superadmin",
-            is_active=True,
-        )
-    )
-    staff_db.commit()
+    create_staff(staff_db, "staff@example.com", "superadmin")
 
     app = FastAPI()
     panel.mount_admin(app, secret_key="test-secret-for-the-admin-session")
     with TestClient(app) as client:
-        signed_in = client.post(
-            "/admin/login",
-            data={"username": "staff@example.com", "password": "staffpassword"},
-            follow_redirects=False,
-        )
-        assert signed_in.status_code in (302, 303), signed_in.text
+        use_session(client, staff_db, "staff@example.com")
         client.staff_db = staff_db
         yield client
     staff_db.close()
@@ -231,6 +218,7 @@ def test_the_audit_trail_names_a_whole_page_in_a_fixed_number_of_queries(admin_c
         assert page.status_code == 200
         return page.text, len(statements)
 
+    assert admin_client.get("/admin/user/list").status_code == 200
     add_entries(2, 0)
     text, few = render()
     for name in ("named-0@example.com", "space-1", "key-0 (named-0@example.com)", "named-1@example.com in space-1"):
@@ -297,19 +285,8 @@ def test_an_entry_with_no_staff_member_says_automatic(admin_client):
 @pytest.mark.parametrize("role", ["admin", "support"])
 def test_only_a_superadmin_opens_the_audit_trail(admin_client, role):
     db = admin_client.staff_db
-    db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email=f"{role}-audit@example.com",
-            password_hash=get_password_hash("their-staff-password"),
-            role=role,
-            is_active=True,
-        )
-    )
-    db.commit()
-    admin_client.post(
-        "/admin/login", data={"username": f"{role}-audit@example.com", "password": "their-staff-password"}
-    )
+    create_staff(db, f"{role}-audit@example.com", role)
+    use_session(admin_client, admin_client.staff_db, f"{role}-audit@example.com")
 
     assert admin_client.get("/admin/admin-action/list", follow_redirects=False).status_code == 403
     assert "Audit trail" not in admin_client.get("/admin/").text
@@ -461,7 +438,6 @@ def test_a_save_that_leaves_a_workspace_active_closes_nothing(admin_client, monk
 
 def _account(db, email="locked-out@example.com", password="their-own-password"):
     from app.models import User
-    from app.security import get_password_hash
 
     user = User(
         id=uuid.uuid4(),
@@ -559,19 +535,8 @@ def test_support_cannot_set_a_password(admin_client):
 
     db = admin_client.staff_db
     user = _account(db, email="not-yours@example.com")
-    db.add(
-        AdminUser(
-            id=uuid.uuid4(),
-            email="support-pw@example.com",
-            password_hash=get_password_hash("supportpassword"),
-            role="support",
-            is_active=True,
-        )
-    )
-    db.commit()
-    admin_client.post(
-        "/admin/login", data={"username": "support-pw@example.com", "password": "supportpassword"}
-    )
+    create_staff(db, "support-pw@example.com", "support")
+    use_session(admin_client, admin_client.staff_db, "support-pw@example.com")
 
     refused = admin_client.post(
         f"/admin/user/edit/{user.id}",
@@ -584,8 +549,9 @@ def test_support_cannot_set_a_password(admin_client):
     assert verify_password("their-own-password", db.get(User, user.id).password_hash)
 
 
-def _staff_form(email, role="support", password="a-long-enough-password"):
-    return {"email": email, "role": role, "password_hash": password}
+def _staff_form(db, email, role="support"):
+    user = _account(db, email=email)
+    return {"email": email, "role": role, "user_id": str(user.id)}
 
 
 def test_a_superadmin_can_add_a_staff_account(admin_client):
@@ -594,7 +560,7 @@ def test_a_superadmin_can_add_a_staff_account(admin_client):
 
     made = admin_client.post(
         "/admin/admin-user/create",
-        data=_staff_form("new-colleague@example.com"),
+        data=_staff_form(admin_client.staff_db, "new-colleague@example.com"),
         follow_redirects=False,
     )
     assert made.status_code in (302, 303), made.text
@@ -609,46 +575,12 @@ def test_a_superadmin_can_add_a_staff_account(admin_client):
     assert added.role == "support"
 
 
-def test_the_password_is_stored_hashed_and_works(admin_client):
-    """A stored plaintext password would be readable by anyone with the panel."""
-    from app.models import AdminUser
-    from app.security import verify_password
-
-    admin_client.post(
-        "/admin/admin-user/create",
-        data=_staff_form("hashed@example.com", password="correct-horse-battery"),
-        follow_redirects=False,
-    )
-
-    admin_client.staff_db.expire_all()
-    added = (
-        admin_client.staff_db.query(AdminUser)
-        .filter(AdminUser.email == "hashed@example.com")
-        .first()
-    )
-    assert added is not None
-    assert added.password_hash != "correct-horse-battery"
-    assert verify_password("correct-horse-battery", added.password_hash)
-
-
-def test_a_short_password_is_refused(admin_client):
-    """Twelve characters, the same floor the bootstrap script enforces."""
-    from app.models import AdminUser
-
-    refused = admin_client.post(
-        "/admin/admin-user/create",
-        data=_staff_form("tooshort@example.com", password="short"),
-        follow_redirects=False,
-    )
-    assert refused.status_code not in (302, 303)
-
-    admin_client.staff_db.expire_all()
-    assert (
-        admin_client.staff_db.query(AdminUser)
-        .filter(AdminUser.email == "tooshort@example.com")
-        .first()
-        is None
-    )
+def test_staff_creation_requires_the_confirmed_account_id(admin_client):
+    data = _staff_form(admin_client.staff_db, "colleague@example.com")
+    data["user_id"] = str(uuid.uuid4())
+    refused = admin_client.post("/admin/admin-user/create", data=data, follow_redirects=False)
+    assert refused.status_code == 400
+    assert admin_client.staff_db.query(AdminUser).filter_by(email=data["email"]).first() is None
 
 
 def test_an_unknown_role_is_refused(admin_client):
@@ -657,7 +589,7 @@ def test_an_unknown_role_is_refused(admin_client):
 
     refused = admin_client.post(
         "/admin/admin-user/create",
-        data=_staff_form("badrole@example.com", role="root"),
+        data=_staff_form(admin_client.staff_db, "badrole@example.com", role="root"),
         follow_redirects=False,
     )
     assert refused.status_code not in (302, 303)
@@ -678,7 +610,7 @@ def test_the_audit_trail_does_not_keep_the_password(admin_client):
 
     admin_client.post(
         "/admin/admin-user/create",
-        data=_staff_form("audited@example.com", password="a-memorable-secret"),
+        data={**_staff_form(admin_client.staff_db, "audited@example.com"), "password_hash": "a-memorable-secret"},
         follow_redirects=False,
     )
 
@@ -695,7 +627,7 @@ def test_a_staff_account_can_be_stopped(admin_client):
 
     admin_client.post(
         "/admin/admin-user/create",
-        data=_staff_form("leaver@example.com"),
+        data=_staff_form(admin_client.staff_db, "leaver@example.com"),
         follow_redirects=False,
     )
     admin_client.staff_db.expire_all()
@@ -736,6 +668,17 @@ def test_the_last_superadmin_cannot_be_stopped(admin_client):
     assert admin_client.staff_db.get(AdminUser, only[0].id).is_active is True
 
 
+def test_active_staff_cannot_be_stopped_through_the_dashboard_account(admin_client):
+    db = admin_client.staff_db
+    user = db.query(User).filter_by(email="staff@example.com").one()
+    form = _user_form(user)
+    del form["is_active"]
+    refused = admin_client.post(f"/admin/user/edit/{user.id}", data=form, follow_redirects=False)
+    assert refused.status_code == 400
+    db.refresh(user)
+    assert user.is_active and user.trashed_at is None
+
+
 def test_editing_a_staff_account_cannot_change_the_role(admin_client):
     """Changing what a colleague may see is a different decision from taking
     their access away, and the edit form is only for the second."""
@@ -743,7 +686,7 @@ def test_editing_a_staff_account_cannot_change_the_role(admin_client):
 
     admin_client.post(
         "/admin/admin-user/create",
-        data=_staff_form("support-only@example.com", role="support"),
+        data=_staff_form(admin_client.staff_db, "support-only@example.com", role="support"),
         follow_redirects=False,
     )
     admin_client.staff_db.expire_all()
@@ -837,21 +780,8 @@ def test_only_the_page_you_are_on_is_selected(admin_client):
         assert active == [selected], (path, active)
 
 
-def _staff(db, email, role):
-    member = AdminUser(
-        id=uuid.uuid4(),
-        email=email,
-        password_hash=get_password_hash("their-staff-password"),
-        role=role,
-        is_active=True,
-    )
-    db.add(member)
-    db.commit()
-    return member
-
-
-def _sign_in(admin_client, email, password="their-staff-password"):
-    admin_client.post("/admin/login", data={"username": email, "password": password})
+def _sign_in(admin_client, email):
+    use_session(admin_client, admin_client.staff_db, email)
 
 
 def _grant(admin_client, group=(), single=()):
@@ -861,7 +791,7 @@ def _grant(admin_client, group=(), single=()):
 
 def test_a_grant_to_every_admin_opens_the_audit_trail_to_them(admin_client):
     db = admin_client.staff_db
-    _staff(db, "group-admin@example.com", "admin")
+    create_staff(db, "group-admin@example.com", "admin")
 
     saved = _grant(admin_client, group=["see_audit"])
     assert "Saved+1+change" in saved.headers["location"]
@@ -876,8 +806,8 @@ def test_a_grant_to_every_admin_opens_the_audit_trail_to_them(admin_client):
 
 def test_a_grant_to_one_admin_does_not_reach_the_others(admin_client):
     db = admin_client.staff_db
-    chosen = _staff(db, "chosen-admin@example.com", "admin")
-    _staff(db, "other-admin@example.com", "admin")
+    chosen = create_staff(db, "chosen-admin@example.com", "admin")
+    create_staff(db, "other-admin@example.com", "admin")
 
     _grant(admin_client, single=[("see_audit", chosen)])
 
@@ -889,7 +819,7 @@ def test_a_grant_to_one_admin_does_not_reach_the_others(admin_client):
 
 def test_taking_a_grant_back_closes_the_door_again(admin_client):
     db = admin_client.staff_db
-    _staff(db, "briefly-admin@example.com", "admin")
+    create_staff(db, "briefly-admin@example.com", "admin")
     _grant(admin_client, group=["see_audit"])
 
     taken = _grant(admin_client)
@@ -903,7 +833,7 @@ def test_taking_a_grant_back_closes_the_door_again(admin_client):
 
 def test_support_cannot_be_given_anything(admin_client):
     db = admin_client.staff_db
-    helper = _staff(db, "helper-support@example.com", "support")
+    helper = create_staff(db, "helper-support@example.com", "support")
 
     _grant(admin_client, group=["see_audit"], single=[("see_audit", helper)])
 
@@ -917,7 +847,7 @@ def test_saving_the_same_permissions_changes_nothing(admin_client):
     from app.models import AdminAction
 
     db = admin_client.staff_db
-    _staff(db, "steady-admin@example.com", "admin")
+    create_staff(db, "steady-admin@example.com", "admin")
     _grant(admin_client, group=["see_audit"])
     before = db.query(AdminAction).count()
 

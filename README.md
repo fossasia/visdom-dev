@@ -31,7 +31,7 @@ The project is under active development.
 - A Usage tab with active time and storage per workspace, from an hourly rollup of what the visdom instances report
 - Old environments removed once they pass the plan's retention window, with a warning first (off until `RETENTION_ENFORCE` is set)
 - People can delete their own account, with a 30 day waiting period that signing in cancels
-- A staff console at `/admin/` with its own sign-in and roles: look up accounts and workspaces, suspend a workspace, manage memberships and staff, and read the audit trail
+- A staff console at `/admin/` with dashboard sign-in and staff roles: look up accounts and workspaces, suspend a workspace, manage memberships and staff, and read the audit trail
 - Privacy and cookie policy pages
 - A "Visualizations" link from the console into the visdom server, and a link back, with both on one origin and sharing the sign-in session
 
@@ -108,13 +108,23 @@ Optional settings in `.env`: `SMTP_*` and `MAIL_FROM` for sending email (without
 
 ### The staff console
 
-The staff console at `/admin/` is off until `ADMIN_ENABLED=True` and `ADMIN_SECRET` is set. Staff accounts are separate from user accounts. Make the first one from inside the gateway container:
+The staff console at `/admin/` uses the dashboard sign-in when `ADMIN_ENABLED=True` and `ADMIN_SECRET` is set. Staff see a **Staff console** link in the dashboard. Signing out of either one ends the shared session. Staff use the dashboard password recovery flow.
 
-```bash
-docker compose exec gateway python -m app.admin.bootstrap you@example.org superadmin
+For a new installation, have the first superadmin register a dashboard account and send its **Account ID** from their profile through a trusted channel. Confirm their identity and email before granting access. In the gateway container, run:
+
+```sh
+docker compose exec gateway python -m app.admin.bootstrap you@example.org CONFIRMED_USER_ID superadmin
 ```
 
-It asks for a password of at least 12 characters. The roles are `viewer`, `support`, `admin` and `superadmin`; a superadmin can add the rest from the console.
+Replace `CONFIRMED_USER_ID` with the actual ID. A superadmin can add other staff in the console with their confirmed ID, email, and role.
+
+**Upgrading an existing console.** Before upgrading, confirm the dashboard account IDs of existing staff, starting with an active superadmin. On the previous version, the signed-in dashboard account ID is available from the profile API at `GET /api/v1/auth/me`. Staff who only have a console account need to register a dashboard account first. Schedule a short staff-console maintenance window. Apply the gateway migration and use the new gateway to link each existing record:
+
+```sh
+docker compose exec gateway python -m app.admin.bootstrap you@example.org CONFIRMED_USER_ID
+```
+
+Omitting the role preserves the staff record, grants, audit history, and active status. Unlinked records have no access. Confirm the first superadmin can open a bookmarked admin page through the shared login before reopening the console. The migration removes the old staff password hashes. If rolling back the migration and application, run the old bootstrap command to set a fresh password for each active staff member.
 
 ## Testing
 
