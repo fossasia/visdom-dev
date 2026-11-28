@@ -8,21 +8,26 @@ import Login from '../Login';
 
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
+  auth: {},
+  target: '/',
   redirectAfterAuth: vi.fn(),
 }));
 
 vi.mock('../../context/AuthContext', () => ({
-  useAuth: () => ({ login: mocks.login }),
+  useAuth: () => ({ login: mocks.login, ...mocks.auth }),
 }));
 
 vi.mock('../../utils/helpers', () => ({
-  resolvePostAuthTarget: () => '/',
+  isAdminTarget: (path) => path.startsWith('/admin/'),
+  resolvePostAuthTarget: () => mocks.target,
   redirectAfterAuth: mocks.redirectAfterAuth,
 }));
 
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.auth = {};
+    mocks.target = '/';
   });
 
   const renderLogin = () =>
@@ -48,6 +53,14 @@ describe('Login', () => {
       expect(mocks.login).toHaveBeenCalledWith('test@example.com', 'password123');
       expect(mocks.redirectAfterAuth).toHaveBeenCalled();
     });
+  });
+
+  it('returns a refreshed staff session to its bookmarked page', async () => {
+    mocks.auth = { user: { id: 1 }, loading: false };
+    mocks.target = '/admin/user/list?page=2';
+    renderLogin();
+    await waitFor(() => expect(mocks.redirectAfterAuth).toHaveBeenCalledWith(mocks.target, expect.any(Function)));
+    expect(mocks.login).not.toHaveBeenCalled();
   });
 
   it('shows an error when login fails', async () => {

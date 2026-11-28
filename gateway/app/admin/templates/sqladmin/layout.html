@@ -740,9 +740,10 @@
     </span>
     {% endif %}
     {% if admin.authentication_backend %}
-    <a href="{{ request.url_for('admin:logout') }}" class="ap-chip" title="{{ _('Logout') }}">
-      <i class="fa fa-sign-out"></i><span>{{ _("Logout") }}</span>
-    </a>
+    <a href="/" class="ap-chip">Dashboard</a>
+    <form action="/api/v1/auth/logout?return_to_login=true" method="post">
+      <button type="submit" class="ap-chip"><i class="fa fa-sign-out"></i>{{ _("Logout") }}</button>
+    </form>
     {% endif %}
   </div>
 </header>

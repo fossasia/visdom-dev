@@ -215,6 +215,7 @@ fetchWorkspaces();
             <User size={13} />
             <span className="gc-sidebar-user-email">{user?.username || user?.email}</span>
           </button>
+          {user?.has_staff_access && <a className="gc-btn" href="/admin/">Staff console</a>}
           <button onClick={logout} className="gc-btn" type="button">
             <LogOut size={13} />
             Logout

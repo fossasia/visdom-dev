@@ -1,11 +1,11 @@
 /* Copyright 2017-present, The Visdom Authors */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { api, useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import PasswordInput from '../components/PasswordInput';
 import { useToast } from '../components/toast/useToast';
-import { parseApiError, resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
+import { isAdminTarget, parseApiError, resolvePostAuthTarget, redirectAfterAuth } from '../utils/helpers';
 import { formatMoment } from '../utils/billing';
 import { invalidate } from '../utils/requestCache';
 import usePageTitle from '../hooks/usePageTitle';
@@ -17,12 +17,19 @@ const Login = () => {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
-  const { login } = useAuth();
+  const { login, user, loading } = useAuth();
+  const usedForm = useRef(false);
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
   const from = resolvePostAuthTarget(location);
+
+  useEffect(() => {
+    if (!loading && user && !usedForm.current && isAdminTarget(from)) {
+      redirectAfterAuth(from, navigate);
+    }
+  }, [from, loading, user, navigate]);
 
   const offerRenewal = async () => {
     let subscription;
@@ -52,6 +59,7 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    usedForm.current = true;
     setSubmitting(true);
     
     try {
@@ -90,7 +98,7 @@ const Login = () => {
               <span>visdom</span>
             </Link>
           </h2>
-          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Sign in to manage your workspaces</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{isAdminTarget(from) ? 'Sign in to the staff console' : 'Sign in to manage your workspaces'}</div>
         </div>
 
         {error && (

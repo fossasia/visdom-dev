@@ -67,7 +67,7 @@ const ProfileModal = ({ onClose }) => {
     setError('');
     try {
       const response = await api.patch('/auth/me/username', { username });
-      setUser(response.data);
+      setUser({ ...user, ...response.data });
       toast.success('Username updated.');
       onClose();
     } catch (err) {
@@ -120,6 +120,11 @@ const ProfileModal = ({ onClose }) => {
       <div className="gc-field">
         <label className="gc-label gc-mb-1">Email Address</label>
         <div className="gc-settings-value">{user?.email}</div>
+      </div>
+
+      <div className="gc-field">
+        <label className="gc-label gc-mb-1">Account ID</label>
+        <div className="gc-settings-value">{user?.id}</div>
       </div>
 
       <div className="gc-field">
