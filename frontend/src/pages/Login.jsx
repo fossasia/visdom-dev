@@ -81,7 +81,7 @@ const Login = () => {
   };
 
   return (
-    <div className="auth-wrapper">
+    <main className="auth-wrapper" aria-label="Sign in">
       <div className="visdom-panel auth-panel">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <h2 className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
@@ -95,7 +95,7 @@ const Login = () => {
 
         {error && (
           <div style={{
-            background: 'rgba(217, 83, 79, 0.1)',
+            background: 'var(--pub-red-tint)',
             border: '1px solid var(--danger-bg)',
             borderRadius: '2px',
             padding: '10px',
@@ -109,14 +109,16 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="login-email" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Email Address
             </label>
             <input
+              id="login-email"
               type="email"
+              autoComplete="email"
               required
               className="visdom-input"
-              placeholder="you@example.com"
+              placeholder="Your email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -124,14 +126,15 @@ const Login = () => {
 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+              <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)' }}>
                 Password
               </label>
-              <Link to="/forgot-password" state={{ email }} style={{ fontSize: '12px', color: '#3b5998', textDecoration: 'none' }}>
+              <Link to="/forgot-password" state={{ email }} style={{ fontSize: '13px', color: 'var(--pub-blue)', textDecoration: 'none' }}>
                 Forgot password?
               </Link>
             </div>
             <PasswordInput
+              id="login-password"
               required
               autoComplete="current-password"
               placeholder="••••••••"
@@ -143,9 +146,9 @@ const Login = () => {
           <button type="submit" disabled={submitting} className="visdom-btn" style={{
             width: '100%',
             height: '32px',
-            backgroundColor: '#3b5998',
-            color: '#ffffff',
-            borderColor: '#2f477a',
+            backgroundColor: 'var(--pub-blue)',
+            color: 'var(--pub-white)',
+            borderColor: 'var(--pub-blue-deep)',
             marginTop: '6px'
           }}>
             {submitting ? 'Signing in...' : 'Sign In'}
@@ -154,18 +157,18 @@ const Login = () => {
 
         <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
           Don't have an account?{' '}
-          <Link to={`/register${location.search}`} state={{ from: location.state?.from }} style={{ color: '#3b5998', textDecoration: 'none', fontWeight: '600' }}>
+          <Link to={`/register${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--pub-blue)', textDecoration: 'none', fontWeight: '600' }}>
             Sign up
           </Link>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
           <Link to={`/privacy${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--text-muted)' }}>Privacy</Link>
           {' · '}
           <Link to={`/cookies${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--text-muted)' }}>Cookies</Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 };
 

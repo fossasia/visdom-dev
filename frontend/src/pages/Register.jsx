@@ -128,18 +128,18 @@ fetchSuggestion();
     <div className="auth-wrapper">
       <div className="visdom-panel auth-panel">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h2 className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <div className="visdom-logo" style={{ fontSize: '24px', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'inherit', textDecoration: 'none' }}>
               <img src="/logo.svg" alt="Visdom Logo" style={{ height: '32px', width: '32px', borderRadius: '4px' }} />
               <span>visdom</span>
             </Link>
-          </h2>
-          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Create your user account</div>
+          </div>
+          <h1 className="auth-title">Create your user account</h1>
         </div>
 
         {error && (
           <div style={{
-            background: 'rgba(217, 83, 79, 0.1)',
+            background: 'var(--pub-red-tint)',
             border: '1px solid var(--danger-bg)',
             borderRadius: '2px',
             padding: '10px',
@@ -153,7 +153,7 @@ fetchSuggestion();
 
         {success && (
           <div style={{
-            background: 'rgba(92, 184, 92, 0.1)',
+            background: 'var(--pub-mint)',
             border: '1px solid var(--success-bg)',
             borderRadius: '2px',
             padding: '10px',
@@ -167,14 +167,16 @@ fetchSuggestion();
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-email" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Email Address
             </label>
             <input
+              id="register-email"
               type="email"
+              autoComplete="email"
               required
               className="visdom-input"
-              placeholder="you@example.com"
+              placeholder="Your email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onBlur={handleEmailBlur}
@@ -182,33 +184,35 @@ fetchSuggestion();
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-username" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Username
             </label>
 
             <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
               <button
                 type="button"
+                aria-pressed={usernameMode === 'auto'}
                 onClick={() => setUsernameMode('auto')}
                 className="visdom-btn"
                 style={{
                   flex: 1,
-                  backgroundColor: usernameMode === 'auto' ? '#3b5998' : undefined,
-                  color: usernameMode === 'auto' ? '#ffffff' : undefined,
-                  borderColor: usernameMode === 'auto' ? '#2f477a' : undefined,
+                  backgroundColor: usernameMode === 'auto' ? 'var(--pub-blue)' : undefined,
+                  color: usernameMode === 'auto' ? 'var(--pub-white)' : undefined,
+                  borderColor: usernameMode === 'auto' ? 'var(--pub-blue-deep)' : undefined,
                 }}
               >
                 Auto-generate
               </button>
               <button
                 type="button"
+                aria-pressed={usernameMode === 'custom'}
                 onClick={() => setUsernameMode('custom')}
                 className="visdom-btn"
                 style={{
                   flex: 1,
-                  backgroundColor: usernameMode === 'custom' ? '#3b5998' : undefined,
-                  color: usernameMode === 'custom' ? '#ffffff' : undefined,
-                  borderColor: usernameMode === 'custom' ? '#2f477a' : undefined,
+                  backgroundColor: usernameMode === 'custom' ? 'var(--pub-blue)' : undefined,
+                  color: usernameMode === 'custom' ? 'var(--pub-white)' : undefined,
+                  borderColor: usernameMode === 'custom' ? 'var(--pub-blue-deep)' : undefined,
                 }}
               >
                 Choose my own
@@ -217,19 +221,20 @@ fetchSuggestion();
 
             {usernameMode === 'auto' ? (
               <div style={{ display: 'flex', gap: '8px' }}>
-                <div
+                <output
+                  id="register-username"
                   className="visdom-input"
                   style={{
                     flex: 1,
                     display: 'flex',
                     alignItems: 'center',
-                    fontFamily: 'monospace',
+                    fontFamily: 'inherit',
                     color: 'var(--text-primary)',
-                    background: '#f5f5f5',
+                    background: 'var(--pub-paper)',
                   }}
                 >
                   {autoUsernameLoading ? 'Generating...' : autoUsername}
-                </div>
+                </output>
                 <button
                   type="button"
                   onClick={() => fetchSuggestion(email.includes('@') ? email.split('@')[0] : undefined)}
@@ -243,6 +248,7 @@ fetchSuggestion();
             ) : (
               <>
                 <input
+                  id="register-username"
                   type="text"
                   className="visdom-input"
                   placeholder="your_username"
@@ -252,7 +258,7 @@ fetchSuggestion();
                   spellCheck={false}
                 />
                 {customUsername && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '13px' }}>
                     {!USERNAME_PATTERN.test(customUsername) ? (
                       <span style={{ color: 'var(--danger-bg)' }}>
                         3-30 characters: letters, numbers, underscores, hyphens.
@@ -275,10 +281,11 @@ fetchSuggestion();
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-password" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Password
             </label>
             <PasswordInput
+              id="register-password"
               required
               autoComplete="new-password"
               placeholder="Minimum 6 characters"
@@ -288,12 +295,13 @@ fetchSuggestion();
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            <label htmlFor="register-confirm" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               Confirm Password
             </label>
             <PasswordInput
               required
               autoComplete="new-password"
+              id="register-confirm"
               placeholder="Re-enter password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
@@ -303,9 +311,9 @@ fetchSuggestion();
           <button type="submit" disabled={submitting || !usernameReady} className="visdom-btn" style={{
             width: '100%',
             height: '32px',
-            backgroundColor: '#3b5998',
-            color: '#ffffff',
-            borderColor: '#2f477a',
+            backgroundColor: 'var(--pub-blue)',
+            color: 'var(--pub-white)',
+            borderColor: 'var(--pub-blue-deep)',
             marginTop: '6px'
           }}>
             {submitting ? 'Creating account...' : 'Create Account'}
@@ -314,12 +322,12 @@ fetchSuggestion();
 
         <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
           Already have an account?{' '}
-          <Link to={`/login${location.search}`} state={{ from: location.state?.from }} style={{ color: '#3b5998', textDecoration: 'none', fontWeight: '600' }}>
+          <Link to={`/login${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--pub-blue)', textDecoration: 'none', fontWeight: '600' }}>
             Sign in
           </Link>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
           <Link to={`/privacy${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--text-muted)' }}>Privacy</Link>
           {' · '}
           <Link to={`/cookies${location.search}`} state={{ from: location.state?.from }} style={{ color: 'var(--text-muted)' }}>Cookies</Link>

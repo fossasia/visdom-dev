@@ -9,9 +9,8 @@ const LegalPage = ({ title, sections }) => {
   const kept = { from: location.state?.from };
 
   return (
-    <div className="gc-legal-wrapper">
+    <main className="gc-legal-wrapper">
       <article className="gc-legal">
-        <Link to={`/login${location.search}`} state={kept} className="gc-legal-back">Back to sign in</Link>
         <h1 className="gc-legal-title">{title}</h1>
         <p className="gc-legal-updated">Last updated {UPDATED}</p>
         {sections.map((section) => (
@@ -28,7 +27,7 @@ const LegalPage = ({ title, sections }) => {
           <Link to={`/cookies${location.search}`} state={kept}>Cookies</Link>
         </p>
       </article>
-    </div>
+    </main>
   );
 };
 
